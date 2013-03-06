@@ -1,6 +1,6 @@
 {
 	"name": "detochko/MailSo",
-	"version": "1.0.0",
+	"version": "0.7.9-beta",
 	"description": "The PHP mail framework.",
 	"keywords": ["mail", "imap", "smtp", "framework"],
 	"homepage": "http://github.com/detochko/MailSo",
@@ -15,8 +15,6 @@
 		"php": ">=5.3.0"
 	},
 	"autoload": {
-		"psr-0": {
-			"MailSo": "lib"
-		}
+		"files": ["lib/MailSo/MailSo.php"]
 	}
 }

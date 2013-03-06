@@ -1,0 +1,19 @@
+{
+	"name": "detochko/MailSo",
+	"description": "The PHP mail framework.",
+	"keywords": ["mail", "imap", "smtp", "framework"],
+	"homepage": "http://mailso.rainloop.net",
+	"license": "MIT",
+	"authors": [
+		{
+			"name": "Usenko Timur",
+			"email": "usenko.timur@gmail.com"
+		}
+	],
+	"require": {
+		"php": ">=5.3.3",
+	},
+	"autoload": {
+		"psr-0": {"MailSo": "lib/"}
+	}
+}

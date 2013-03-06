@@ -1,33 +1,22 @@
 {
-	"repositories": [
+	"name": "detochko/MailSo",
+	"version": "1.0.0",
+	"description": "The PHP mail framework.",
+	"keywords": ["mail", "imap", "smtp", "framework"],
+	"homepage": "http://github.com/detochko/MailSo",
+	"license": "MIT",
+	"authors": [
 		{
-			"type": "package",
-			"package": {
-				"name": "detochko/MailSo",
-				"description": "The PHP mail framework.",
-				"keywords": ["mail", "imap", "smtp", "framework"],
-				"homepage": "http://mailso.rainloop.net",
-				"license": "MIT",
-				"authors": [
-					{
-						"name": "Usenko Timur",
-						"email": "usenko.timur@gmail.com"
-					}
-				],
-				"version": "1.0.0",
-				"source": {
-					"type": "git",
-					"url": "https://github.com/detochko/MailSo",
-					"reference": "default"
-				},
-				"autoload": {
-					"psr-0": {"MailSo": "lib/"}
-				}
-			}
+			"name": "Usenko Timur",
+			"email": "usenko.timur@gmail.com"
 		}
 	],
+	"autoload": {
+		"psr-0": {
+			"MailSo": "lib"
+		}
+	},
 	"require": {
-		"php": ">=5.3.0",
-		"detochko/MailSo": "1.0.0"
+		"php": ">=5.3.0"
 	}
 }

@@ -1,0 +1,12 @@
+{
+    "require": {
+		"php": ">=5.3.0",
+		"detochko/MailSo": "dev-master"
+	},
+    "repositories": [
+		{
+			"type": "git",
+			"url": "http://github.com/detochko/MailSo"
+		}
+	]
+}

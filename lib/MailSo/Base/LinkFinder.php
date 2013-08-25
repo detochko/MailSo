@@ -32,7 +32,7 @@ class LinkFinder
 	/**
 	 * @var int
 	 */
-	private $iHhtmlSpecialCharsFlags;
+	private $iHtmlSpecialCharsFlags;
 
 	/**
 	 * @var mixed
@@ -44,8 +44,13 @@ class LinkFinder
 	 */
 	private function __construct()
 	{
-		$this->iHhtmlSpecialCharsFlags = (\defined('ENT_QUOTES') && \defined('ENT_SUBSTITUTE') && \defined('ENT_HTML401'))
+		$this->iHtmlSpecialCharsFlags = (\defined('ENT_QUOTES') && \defined('ENT_SUBSTITUTE') && \defined('ENT_HTML401'))
 			? ENT_QUOTES | ENT_SUBSTITUTE | ENT_HTML401 : ENT_QUOTES;
+
+		if (\defined('ENT_IGNORE'))
+		{
+			$this->iHtmlSpecialCharsFlags |= ENT_IGNORE;
+		}
 
 		$this->Clear();
 	}
@@ -122,7 +127,7 @@ class LinkFinder
 			}
 
 			$sNameLink = $sLink;
-			if ($bShortLink && !\preg_match('/^[a-z]{3-5}:\/\//i', \ltrim($sLink)))
+			if (!\preg_match('/^[a-z]{3,5}\:\/\//i', \ltrim($sLink)))
 			{
 				$sLink = 'http://'.\ltrim($sLink);
 			}
@@ -165,7 +170,7 @@ class LinkFinder
 
 		if ($bUseHtmlSpecialChars)
 		{
-			$sText = @\htmlspecialchars($sText, $this->iHhtmlSpecialCharsFlags, 'UTF-8');
+			$sText = @\htmlentities($sText, $this->iHtmlSpecialCharsFlags, 'UTF-8');
 		}
 
 		if (0 < \count($this->aPrepearPlainStringUrls))
@@ -191,7 +196,7 @@ class LinkFinder
 	private function findLinks($sText, $fWrapper)
 	{
 		$sPattern = '/([\W]|^)((?:https?:\/\/)|(?:svn:\/\/)|(?:git:\/\/)|(?:s?ftps?:\/\/)|(?:www\.))'.
-			'((\S+?)(\\/)?)((?:&gt;)?|[^\w\=\\/;\(\)\[\]]*?)(?=<|\s|$)/im';
+			'((\S+?)(\\/)?)((?:&gt;)?|[^\w\=\\/;\(\)\[\]]*?)(?=<|\s|$)/imu';
 
 		$aPrepearPlainStringUrls = $this->aPrepearPlainStringUrls;
 		$sText = \preg_replace_callback($sPattern, function ($aMatch) use ($fWrapper, &$aPrepearPlainStringUrls) {

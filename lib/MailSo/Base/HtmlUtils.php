@@ -26,7 +26,7 @@ class HtmlUtils
 		if ($bOnce)
 		{
 			$bOnce = false;
-			if (function_exists('libxml_use_internal_errors'))
+			if (\MailSo\Base\Utils::FunctionExistsAndEnabled('libxml_use_internal_errors'))
 			{
 				@libxml_use_internal_errors(true);
 			}
@@ -35,7 +35,7 @@ class HtmlUtils
 		$oDom = new \DOMDocument('1.0', 'utf-8');
 
 		@$oDom->loadHTML('<'.'?xml version="1.0" encoding="utf-8"?'.'>'.
-			'<head><meta http-equiv="Content-Type" content="text/html; charset=utf-8"></head>'.$sText);
+			'<html><head><meta http-equiv="Content-Type" content="text/html; charset=utf-8"></head><body>'.$sText.'</body></html>');
 
 		return $oDom;
 	}
@@ -45,10 +45,12 @@ class HtmlUtils
 	 *
 	 * @return string
 	 */
-	public static function ClearBodyTag($sHtml)
+	public static function ClearBodyAndHtmlTag($sHtml)
 	{
 		$sHtml = \preg_replace('/<body([^>]*)>/im', '<div\\1>', $sHtml);
 		$sHtml = \preg_replace('/<\/body>/im', '</div>', $sHtml);
+		$sHtml = \preg_replace('/<html([^>]*)>/im', '<div\\1>', $sHtml);
+		$sHtml = \preg_replace('/<\/html>/im', '</div>', $sHtml);
 		return $sHtml;
 	}
 
@@ -66,9 +68,7 @@ class HtmlUtils
 
 		$aToRemove = array(
 			'/<!doctype[^>]*>/msi',
-			'/<html[^>]*>/msi',
-			'/<\?xml [^>]*\?>/msi',
-			'/<\/html>/msi'
+			'/<\?xml [^>]*\?>/msi'
 		);
 
 		foreach ($aRemoveTags as $sTag)
@@ -124,11 +124,11 @@ class HtmlUtils
 	 * @param string $sStyle
 	 * @param \DOMElement $oElement
 	 * @param bool $bHasExternals
-	 * @param array $aFoundedCIDs
+	 * @param array $aFoundCIDs
 	 *
 	 * @return string
 	 */
-	public static function ClearStyle($sStyle, $oElement, &$bHasExternals, &$aFoundedCIDs)
+	public static function ClearStyle($sStyle, $oElement, &$bHasExternals, &$aFoundCIDs)
 	{
 		$sStyle = \trim($sStyle);
 		$aOutStyles = array();
@@ -140,10 +140,19 @@ class HtmlUtils
 			$aStyleValue = \explode(':', $sStyleItem, 2);
 			$sName = \trim(\strtolower($aStyleValue[0]));
 			$sValue = isset($aStyleValue[1]) ? \trim($aStyleValue[1]) : '';
+
 			if ('position' === $sName && 'fixed' === \strtolower($sValue))
 			{
 				$sValue = 'absolute';
 			}
+
+			if (0 === \strlen($sName) || 0 === \strlen($sValue))
+			{
+				continue;
+			}
+
+			$sStyleItem = $sName.': '.$sValue;
+			$aStyleValue = array($sName, $sValue);
 
 			/*if (\in_array($sName, array('position', 'left', 'right', 'top', 'bottom', 'behavior', 'cursor')))
 			{
@@ -151,7 +160,8 @@ class HtmlUtils
 			}
 			else */if (\in_array($sName, array('behavior', 'cursor')) ||
 				('display' === $sName && 'none' === \strtolower($sValue)) ||
-				\preg_match('/expression/i', $sValue)
+				\preg_match('/expression/i', $sValue) ||
+				('text-indent' === $sName && '-' === \substr(trim($sValue), 0, 1))
 			)
 			{
 				// skip
@@ -173,7 +183,7 @@ class HtmlUtils
 
 						$oElement->setAttribute('data-x-style-cid', \substr($sUrl, 4));
 
-						$aFoundedCIDs[] = \substr($sUrl, 4);
+						$aFoundCIDs[] = \substr($sUrl, 4);
 					}
 				}
 				else
@@ -199,7 +209,7 @@ class HtmlUtils
 							$oElement->setAttribute('data-x-style-url', \trim($sTemp.
 								('background' === $sName ? 'background-image' : $sName).': '.$sFullUrl, ' ;'));
 						}
-						else
+						else if ('data:image/' !== \strtolower(\substr(\trim($sUrl), 0, 11)))
 						{
 							$oElement->setAttribute('data-x-broken-style-src', $sFullUrl);
 						}
@@ -228,11 +238,11 @@ class HtmlUtils
 	/**
 	 * @param string $sHtml
 	 * @param bool $bHasExternals
-	 * @param array $aFoundedCIDs
+	 * @param array $aFoundCIDs
 	 *
 	 * @return string
 	 */
-	public static function ClearHtml($sHtml, &$bHasExternals = false, &$aFoundedCIDs = array())
+	public static function ClearHtml($sHtml, &$bHasExternals = false, &$aFoundCIDs = array())
 	{
 		$sHtml = null === $sHtml ? '' : (string) $sHtml;
 		$sHtml = \trim($sHtml);
@@ -245,7 +255,7 @@ class HtmlUtils
 
 		$sHtml = \MailSo\Base\HtmlUtils::ClearTags($sHtml);
 		$sHtml = \MailSo\Base\HtmlUtils::ClearOn($sHtml);
-		$sHtml = \MailSo\Base\HtmlUtils::ClearBodyTag($sHtml);
+		$sHtml = \MailSo\Base\HtmlUtils::ClearBodyAndHtmlTag($sHtml);
 
 		// Dom Part
 		$oDom = \MailSo\Base\HtmlUtils::GetDomFromText($sHtml);
@@ -292,7 +302,7 @@ class HtmlUtils
 					if ('cid:' === \strtolower(\substr($sSrc, 0, 4)))
 					{
 						$oElement->setAttribute('data-x-src-cid', \substr($sSrc, 4));
-						$aFoundedCIDs[] = \substr($sSrc, 4);
+						$aFoundCIDs[] = \substr($sSrc, 4);
 					}
 					else
 					{
@@ -300,6 +310,10 @@ class HtmlUtils
 						{
 							$oElement->setAttribute('data-x-src', $sSrc);
 							$bHasExternals = true;
+						}
+						else if ('data:image/' === \strtolower(\substr(\trim($sSrc), 0, 11)))
+						{
+							$oElement->setAttribute('src', $sSrc);
 						}
 						else
 						{
@@ -337,7 +351,7 @@ class HtmlUtils
 				if ($oElement->hasAttribute('style'))
 				{
 					$oElement->setAttribute('style',
-						\MailSo\Base\HtmlUtils::ClearStyle($oElement->getAttribute('style'), $oElement, $bHasExternals, $aFoundedCIDs));
+						\MailSo\Base\HtmlUtils::ClearStyle($oElement->getAttribute('style'), $oElement, $bHasExternals, $aFoundCIDs));
 				}
 			}
 
@@ -347,9 +361,112 @@ class HtmlUtils
 		unset($oDom);
 
 		$sResult = \MailSo\Base\HtmlUtils::ClearTags($sResult);
-		$sResult = \MailSo\Base\HtmlUtils::ClearBodyTag($sResult);
+		$sResult = \MailSo\Base\HtmlUtils::ClearBodyAndHtmlTag($sResult);
 
 		return \trim($sResult);
+	}
+
+	/**
+	 * @param string $sHtml
+	 * @param array $aFoundCids = array()
+	 *
+	 * @return string
+	 */
+	public static function BuildHtml($sHtml, &$aFoundCids = array())
+	{
+		$oDom = \MailSo\Base\HtmlUtils::GetDomFromText($sHtml);
+		unset($sHtml);
+
+		$aNodes = $oDom->getElementsByTagName('*');
+		foreach ($aNodes as /* @var $oElement \DOMElement */ $oElement)
+		{
+			if ($oElement->hasAttribute('data-x-src-cid'))
+			{
+				$sCid = $oElement->getAttribute('data-x-src-cid');
+				$oElement->removeAttribute('data-x-src-cid');
+
+				if (!empty($sCid))
+				{
+					$aFoundCids[] = $sCid;
+
+					@$oElement->removeAttribute('src');
+					$oElement->setAttribute('src', 'cid:'.$sCid);
+				}
+			}
+
+			if ($oElement->hasAttribute('data-x-broken-src'))
+			{
+				$oElement->setAttribute('src', $oElement->getAttribute('data-x-broken-src'));
+				$oElement->removeAttribute('data-x-broken-src');
+			}
+
+			if ($oElement->hasAttribute('data-x-src'))
+			{
+				$oElement->setAttribute('src', $oElement->getAttribute('data-x-src'));
+				$oElement->removeAttribute('data-x-src');
+			}
+
+			if ($oElement->hasAttribute('data-x-href'))
+			{
+				$oElement->setAttribute('href', $oElement->getAttribute('data-x-href'));
+				$oElement->removeAttribute('data-x-href');
+			}
+
+			if ($oElement->hasAttribute('data-x-style-cid-name') && $oElement->hasAttribute('data-x-style-cid'))
+			{
+				$sCidName = $oElement->getAttribute('data-x-style-cid-name');
+				$sCid = $oElement->getAttribute('data-x-style-cid');
+
+				$oElement->removeAttribute('data-x-style-cid-name');
+				$oElement->removeAttribute('data-x-style-cid');
+				if (!empty($sCidName) && !empty($sCid) && \in_array($sCidName,
+					array('background-image', 'background', 'list-style-image', 'content')))
+				{
+					$sStyles = '';
+					if ($oElement->hasAttribute('style'))
+					{
+						$sStyles = \trim(\trim($oElement->getAttribute('style')), ';');
+					}
+
+					$sBack = $sCidName.': url(cid:'.$sCid.')';
+					$sStyles = \preg_replace('/'.\preg_quote($sCidName, '/').':\s?[^;]+/i', $sBack, $sStyles);
+					if (false === \strpos($sStyles, $sBack))
+					{
+						$sStyles .= empty($sStyles) ? '': '; ';
+						$sStyles .= $sBack;
+					}
+
+					$oElement->setAttribute('style', $sStyles);
+					$aFoundCids[] = $sCid;
+				}
+			}
+
+			if ($oElement->hasAttribute('data-x-style-url'))
+			{
+				$sAddStyles = $oElement->getAttribute('data-x-style-url');
+				$oElement->removeAttribute('data-x-style-url');
+
+				if (!empty($sAddStyles))
+				{
+					$sStyles = '';
+					if ($oElement->hasAttribute('style'))
+					{
+						$sStyles = \trim(\trim($oElement->getAttribute('style')), ';');
+					}
+
+					$oElement->setAttribute('style', (empty($sStyles) ? '' : $sStyles.'; ').$sAddStyles);
+				}
+			}
+		}
+
+		$sResult = $oDom->saveHTML();
+		unset($oDom);
+
+		$sResult = \MailSo\Base\HtmlUtils::ClearTags($sResult);
+		$sResult = \MailSo\Base\HtmlUtils::ClearBodyAndHtmlTag($sResult);
+
+		return '<!DOCTYPE html><html'.(\MailSo\Base\Utils::IsRTL($sResult) ? ' dir="rtl"' : ' dir="ltr"').'><head><meta http-equiv="Content-Type" content="text/html; charset=utf-8" /><head>'.
+			'<body>'.\trim($sResult).'</body></html>';
 	}
 
 	/**
@@ -361,7 +478,7 @@ class HtmlUtils
 	public static function ConvertPlainToHtml($sText, $bLinksWithTargetBlank = true)
 	{
 		$sText = \trim($sText);
-		if (empty($sText))
+		if (0 === \strlen($sText))
 		{
 			return '';
 		}
@@ -369,7 +486,8 @@ class HtmlUtils
 		$sText = \MailSo\Base\LinkFinder::NewInstance()
 			->Text($sText)
 			->UseDefaultWrappers($bLinksWithTargetBlank)
-			->CompileText(true, false);
+//			->CompileText(true, false);
+			->CompileText(true, true);
 
 		$sText = \str_replace("\r", '', $sText);
 
@@ -427,6 +545,7 @@ class HtmlUtils
 		$sText = \preg_replace('/<blockquote>[\s]+/i', '<blockquote>', $sText);
 		$sText = \preg_replace('/[\s]+<\/blockquote>/i', '</blockquote>', $sText);
 
+		$sText = \preg_replace('/<\/blockquote>([\n]{0,2})<blockquote>/i', '\\1', $sText);
 		$sText = \preg_replace('/[\n]{3,}/', "\n\n", $sText);
 
 		$sText = \strtr($sText, array(
@@ -437,107 +556,111 @@ class HtmlUtils
 
 		return $sText;
 	}
-
+	
 	/**
-	 * @param string $sHtml
-	 * @param array $aFoundedCids = array()
-	 *
+	 * @param string $sText
+	 * 
 	 * @return string
 	 */
-	public static function BuildHtml($sHtml, &$aFoundedCids = array())
+	public static function ConvertHtmlToPlain($sText)
 	{
-		$oDom = \MailSo\Base\HtmlUtils::GetDomFromText($sHtml);
-		unset($sHtml);
+		$sText = trim(stripslashes($sText));
+		$sText = preg_replace('/[\s]+/', ' ', $sText);
+		$sText = preg_replace(array(
+				"/\r/",
+				"/[\n\t]+/",
+				'/<script[^>]*>.*?<\/script>/i',
+				'/<style[^>]*>.*?<\/style>/i',
+				'/<title[^>]*>.*?<\/title>/i',
+				'/<h[123][^>]*>(.+?)<\/h[123]>/i',
+				'/<h[456][^>]*>(.+?)<\/h[456]>/i',
+				'/<p[^>]*>/i',
+				'/<br[^>]*>/i',
+				'/<b[^>]*>(.+?)<\/b>/i',
+				'/<i[^>]*>(.+?)<\/i>/i',
+				'/(<ul[^>]*>|<\/ul>)/i',
+				'/(<ol[^>]*>|<\/ol>)/i',
+				'/<li[^>]*>/i',
+				'/<a[^>]*href="([^"]+)"[^>]*>(.+?)<\/a>/i',
+				'/<hr[^>]*>/i',
+				'/(<table[^>]*>|<\/table>)/i',
+				'/(<tr[^>]*>|<\/tr>)/i',
+				'/<td[^>]*>(.+?)<\/td>/i',
+				'/<th[^>]*>(.+?)<\/th>/i',
+				'/&nbsp;/i',
+				'/&quot;/i',
+				'/&gt;/i',
+				'/&lt;/i',
+				'/&amp;/i',
+				'/&copy;/i',
+				'/&trade;/i',
+				'/&#8220;/',
+				'/&#8221;/',
+				'/&#8211;/',
+				'/&#8217;/',
+				'/&#38;/',
+				'/&#169;/',
+				'/&#8482;/',
+				'/&#151;/',
+				'/&#147;/',
+				'/&#148;/',
+				'/&#149;/',
+				'/&reg;/i',
+				'/&bull;/i',
+				'/&[&;]+;/i',
+				'/&#39;/',
+				'/&#160;/'
+			), array(
+				'',
+				' ',
+				'',
+				'',
+				'',
+				"\n\n\\1\n\n",
+				"\n\n\\1\n\n",
+				"\n\n\t",
+				"\n",
+				'\\1',
+				'\\1',
+				"\n\n",
+				"\n\n",
+				"\n\t* ",
+				'\\2 (\\1)',
+				"\n------------------------------------\n",
+				"\n",
+				"\n",
+				"\t\\1\n",
+				"\t\\1\n",
+				' ',
+				'"',
+				'>',
+				'<',
+				'&',
+				'(c)',
+				'(tm)',
+				'"',
+				'"',
+				'-',
+				"'",
+				'&',
+				'(c)',
+				'(tm)',
+				'--',
+				'"',
+				'"',
+				'*',
+				'(R)',
+				'*',
+				'',
+				'\'',
+				''
+			), $sText);
+		
+		$sText = str_ireplace('<div>',"\n<div>", $sText);
+		$sText = strip_tags($sText, '');
+		$sText = preg_replace("/\n\\s+\n/", "\n", $sText);
+		$sText = preg_replace("/[\n]{3,}/", "\n\n", $sText);
 
-		$aNodes = $oDom->getElementsByTagName('*');
-		foreach ($aNodes as /* @var $oElement \DOMElement */ $oElement)
-		{
-			if ($oElement->hasAttribute('data-x-src-cid'))
-			{
-				$sCid = $oElement->getAttribute('data-x-src-cid');
-				$oElement->removeAttribute('data-x-src-cid');
-
-				if (!empty($sCid))
-				{
-					$aFoundedCids[] = $sCid;
-
-					@$oElement->removeAttribute('src');
-					$oElement->setAttribute('src', 'cid:'.$sCid);
-				}
-			}
-
-			if ($oElement->hasAttribute('data-x-broken-src'))
-			{
-				$oElement->setAttribute('src', $oElement->getAttribute('data-x-broken-src'));
-				$oElement->removeAttribute('data-x-broken-src');
-			}
-
-			if ($oElement->hasAttribute('data-x-src'))
-			{
-				$oElement->setAttribute('src', $oElement->getAttribute('data-x-src'));
-				$oElement->removeAttribute('data-x-src');
-			}
-
-			if ($oElement->hasAttribute('data-x-href'))
-			{
-				$oElement->setAttribute('href', $oElement->getAttribute('data-x-href'));
-				$oElement->removeAttribute('data-x-href');
-			}
-
-			if ($oElement->hasAttribute('data-x-style-cid-name') && $oElement->hasAttribute('data-x-style-cid'))
-			{
-				$sCidName = $oElement->getAttribute('data-x-style-cid-name');
-				$sCid = $oElement->getAttribute('data-x-style-cid');
-
-				$oElement->removeAttribute('data-x-style-cid-name');
-				$oElement->removeAttribute('data-x-style-cid');
-				if (!empty($sCidName) && !empty($sCid) && \in_array($sCidName,
-					array('background-image', 'background', 'list-style-image', 'content')))
-				{
-					$sStyles = '';
-					if ($oElement->hasAttribute('style'))
-					{
-						$sStyles = \trim(\trim($oElement->getAttribute('style')), ';');
-					}
-
-					$sBack = $sCidName.': url(cid:'.$sCid.')';
-					$sStyles = \preg_replace('/'.\preg_quote($sCidName, '/').':\s?[^;]+/i', $sBack, $sStyles);
-					if (false === \strpos($sStyles, $sBack))
-					{
-						$sStyles .= empty($sStyles) ? '': '; ';
-						$sStyles .= $sBack;
-					}
-
-					$oElement->setAttribute('style', $sStyles);
-					$aFoundedCids[] = $sCid;
-				}
-			}
-
-			if ($oElement->hasAttribute('data-x-style-url'))
-			{
-				$sAddStyles = $oElement->getAttribute('data-x-style-url');
-				$oElement->removeAttribute('data-x-style-url');
-
-				if (!empty($sAddStyles))
-				{
-					$sStyles = '';
-					if ($oElement->hasAttribute('style'))
-					{
-						$sStyles = \trim(\trim($oElement->getAttribute('style')), ';');
-					}
-
-					$oElement->setAttribute('style', (empty($sStyles) ? '' : $sStyles.'; ').$sAddStyles);
-				}
-			}
-		}
-
-		$sResult = $oDom->saveHTML();
-		unset($oDom);
-
-		$sResult = \MailSo\Base\HtmlUtils::ClearTags($sResult);
-		$sResult = \MailSo\Base\HtmlUtils::ClearBodyTag($sResult);
-
-		return '<!DOCTYPE html><html><head><meta http-equiv="Content-Type" content="text/html; charset=utf-8" /><head>'.
-			'<body>'.\trim($sResult).'</body></html>';
+		return trim($sText);
 	}
 }

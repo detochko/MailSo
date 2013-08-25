@@ -50,7 +50,7 @@ class AttachmentCollection extends \MailSo\Base\Collection
 	public function SizeOfAttachments()
 	{
 		$iResult = 0;
-		return $this->ForeachList(function ($oItem) use (&$iResult) {
+		$this->ForeachList(function ($oItem) use (&$iResult) {
 			if ($oItem)
 			{
 				$iResult += $oItem->FileSize();

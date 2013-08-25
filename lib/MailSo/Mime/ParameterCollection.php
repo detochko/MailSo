@@ -128,6 +128,7 @@ class ParameterCollection extends \MailSo\Base\Collection
 	private function reParseParameters()
 	{
 		$aDataToReParse = $this->CloneAsArray();
+		$sCharset = \MailSo\Base\Enumerations\Charset::UTF_8;
 
 		$this->Clear();
 
@@ -136,6 +137,7 @@ class ParameterCollection extends \MailSo\Base\Collection
 		{
 			$aMatch = array();
 			$sParamName = $oParam->Name();
+
 			if (preg_match('/([^\*]+)\*([\d]{1,2})\*/', $sParamName, $aMatch) && isset($aMatch[1], $aMatch[2])
 				&& 0 < strlen($aMatch[1]) && is_numeric($aMatch[2]))
 			{
@@ -144,7 +146,32 @@ class ParameterCollection extends \MailSo\Base\Collection
 					$aPreParams[$aMatch[1]] = array();
 				}
 
-				$aPreParams[$aMatch[1]][(int) $aMatch[2]] = $oParam->Value();
+				$sValue = $oParam->Value();
+				$aValueParts = explode('\'\'', $sValue, 2);
+				if (is_array($aValueParts) && 2 === count($aValueParts) && 0 < strlen($aValueParts[1]))
+				{
+					$sCharset = $aValueParts[0];
+					$sValue = $aValueParts[1];
+				}
+
+				$aPreParams[$aMatch[1]][(int) $aMatch[2]] = $sValue;
+			}
+			else if (preg_match('/([^\*]+)\*/', $sParamName, $aMatch) && isset($aMatch[1]))
+			{
+				if (!isset($aPreParams[$aMatch[1]]))
+				{
+					$aPreParams[$aMatch[1]] = array();
+				}
+
+				$sValue = $oParam->Value();
+				$aValueParts = explode('\'\'', $sValue, 2);
+				if (is_array($aValueParts) && 2 === count($aValueParts) && 0 < strlen($aValueParts[1]))
+				{
+					$sCharset = $aValueParts[0];
+					$sValue = $aValueParts[1];
+				}
+
+				$aPreParams[$aMatch[1]][0] = $sValue;
 			}
 			else
 			{
@@ -155,7 +182,16 @@ class ParameterCollection extends \MailSo\Base\Collection
 		foreach ($aPreParams as $sName => $aValues)
 		{
 			ksort($aValues);
-			$this->Add(Parameter::NewInstance($sName, implode($aValues)));
+			$sResult = implode(array_values($aValues));
+			$sResult = urldecode($sResult);
+
+			if (0 < strlen($sCharset))
+			{
+				$sResult = \MailSo\Base\Utils::ConvertEncoding($sResult,
+					$sCharset, \MailSo\Base\Enumerations\Charset::UTF_8);
+			}
+
+			$this->Add(Parameter::NewInstance($sName, $sResult));
 		}
 	}
 }

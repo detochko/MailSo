@@ -55,11 +55,11 @@ class Folder
 		$this->aFlags = array();
 		$this->aExtended = array();
 
-		$sDelimiter = 'NIL' === strtoupper($sDelimiter) ? '' : $sDelimiter;
+		$sDelimiter = 'NIL' === \strtoupper($sDelimiter) ? '' : $sDelimiter;
 
-		if (!is_array($aFlags) ||
-			!is_string($sDelimiter) || 1 < strlen($sDelimiter) ||
-			!is_string($sFullNameRaw) || 0 === strlen($sFullNameRaw))
+		if (!\is_array($aFlags) ||
+			!\is_string($sDelimiter) || 1 < \strlen($sDelimiter) ||
+			!\is_string($sFullNameRaw) || 0 === \strlen($sFullNameRaw))
 		{
 			throw new \MailSo\Base\Exceptions\InvalidArgumentException();
 		}
@@ -67,7 +67,10 @@ class Folder
 		$this->sFullNameRaw = $sFullNameRaw;
 		$this->sDelimiter = $sDelimiter;
 		$this->aFlags = $aFlags;
-		$this->aFlagsLowerCase = array_map('strtolower', $this->aFlags);
+		$this->aFlagsLowerCase = \array_map('strtolower', $this->aFlags);
+
+		$this->sFullNameRaw = 'INBOX'.$this->sDelimiter === \substr(\strtoupper($this->sFullNameRaw), 0, 5 + \strlen($this->sDelimiter)) ?
+			'INBOX'.\substr($this->sFullNameRaw, 5) : $this->sFullNameRaw;
 
 		if ($this->IsInbox())
 		{
@@ -75,10 +78,10 @@ class Folder
 		}
 
 		$this->sNameRaw = $this->sFullNameRaw;
-		if (0 < strlen($this->sDelimiter))
+		if (0 < \strlen($this->sDelimiter))
 		{
-			$aNames = explode($this->sDelimiter, $this->sFullNameRaw);
-			$this->sNameRaw = end($aNames);
+			$aNames = \explode($this->sDelimiter, $this->sFullNameRaw);
+			$this->sNameRaw = \end($aNames);
 		}
 	}
 
@@ -141,7 +144,7 @@ class Folder
 	 */
 	public function IsSelectable()
 	{
-		return !in_array('\noselect', $this->aFlagsLowerCase);
+		return !\in_array('\noselect', $this->aFlagsLowerCase);
 	}
 
 	/**
@@ -149,7 +152,7 @@ class Folder
 	 */
 	public function IsInbox()
 	{
-		return 'INBOX' === strtoupper($this->sFullNameRaw) || in_array('\inbox', $this->aFlagsLowerCase);
+		return 'INBOX' === \strtoupper($this->sFullNameRaw) || \in_array('\inbox', $this->aFlagsLowerCase);
 	}
 	
 	/**

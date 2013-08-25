@@ -51,7 +51,7 @@ class Pop3Client extends \MailSo\Net\NetClient
 
 	/**
 	 * @param string $sServerName
-	 * @param int $iPort = 25
+	 * @param int $iPort = 110
 	 * @param int $iSecurityType = \MailSo\Net\Enumerations\ConnectionSecurityType::AUTO_DETECT
 	 *
 	 * @return \MailSo\Pop3\Pop3Client
@@ -60,7 +60,7 @@ class Pop3Client extends \MailSo\Net\NetClient
 	 * @throws \MailSo\Net\Exceptions\Exception
 	 * @throws \MailSo\Pop3\Exceptions\ResponseException
 	 */
-	public function Connect($sServerName, $iPort = 25,
+	public function Connect($sServerName, $iPort = 110,
 		$iSecurityType = \MailSo\Net\Enumerations\ConnectionSecurityType::AUTO_DETECT)
 	{
 		$this->iRequestTime = microtime(true);
@@ -75,7 +75,7 @@ class Pop3Client extends \MailSo\Net\NetClient
 			if (!@stream_socket_enable_crypto($this->rConnect, true, STREAM_CRYPTO_METHOD_TLS_CLIENT))
 			{
 				$this->writeLogException(
-					new Exceptions\RuntimeException('Cannot enable TLS'),
+					new \MailSo\Pop3\Exceptions\RuntimeException('Cannot enable STARTTLS'),
 					\MailSo\Log\Enumerations\Type::ERROR, true);
 			}
 
@@ -130,6 +130,14 @@ class Pop3Client extends \MailSo\Net\NetClient
 		$this->aCapa = null;
 
 		return $this;
+	}
+
+	/**
+	 * @return bool
+	 */
+	public function IsLoggined()
+	{
+		return $this->IsConnected() && $this->bIsLoggined;
 	}
 
 	/**

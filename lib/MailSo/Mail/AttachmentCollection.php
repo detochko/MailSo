@@ -29,12 +29,10 @@ class AttachmentCollection extends \MailSo\Base\Collection
 	 */
 	public function InlineCount()
 	{
-		$oAttachment = null;
-
 		$aList = $this->FilterList(function ($oAttachment) {
 			return $oAttachment && $oAttachment->IsInline();
 		});
 
-		return is_array($aList) ? count($aList) : 0;
+		return \is_array($aList) ? \count($aList) : 0;
 	}
 }

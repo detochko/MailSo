@@ -78,9 +78,9 @@ class Attachment
 		if ($this->oBodyStructure)
 		{
 			$sFileName = $this->oBodyStructure->FileName();
-			if ($bCalculateOnEmpty && 0 === strlen(trim($sFileName)))
+			if ($bCalculateOnEmpty && 0 === \strlen(trim($sFileName)))
 			{
-				$sMimeType = strtolower(trim($this->MimeType()));
+				$sMimeType = \strtolower(\trim($this->MimeType()));
 				if ('message/rfc822' === $sMimeType)
 				{
 					$sFileName = 'message'.$this->MimeIndex().'.eml';
@@ -89,9 +89,9 @@ class Attachment
 				{
 					$sFileName = 'calendar'.$this->MimeIndex().'.ics';
 				}
-				else if (0 < strlen($sMimeType))
+				else if (0 < \strlen($sMimeType))
 				{
-					$sFileName = str_replace('/', $this->MimeIndex().'.', $sMimeType);
+					$sFileName = \str_replace('/', $this->MimeIndex().'.', $sMimeType);
 				}
 			}
 		}

@@ -11,11 +11,6 @@ class SmtpClient extends \MailSo\Net\NetClient
 	/**
 	 * @var bool
 	 */
-	private $bIsLoggined;
-
-	/**
-	 * @var bool
-	 */
 	private $bHelo;
 
 	/**
@@ -44,6 +39,16 @@ class SmtpClient extends \MailSo\Net\NetClient
 	private $aAuthTypes;
 
 	/**
+	 * @var array
+	 */
+	private $aCapa;
+
+	/**
+	 * @var int
+	 */
+	private $iSizeCapaValue;
+
+	/**
 	 * @var int
 	 */
 	private $iRequestTime;
@@ -60,12 +65,13 @@ class SmtpClient extends \MailSo\Net\NetClient
 	{
 		parent::__construct();
 
-		$this->bIsLoggined = false;
 		$this->bIsStartTSLSupported = false;
 		$this->aAuthTypes = array();
 
 		$this->iRequestTime = 0;
+		$this->iSizeCapaValue = 0;
 		$this->aResults = array();
+		$this->aCapa = array();
 
 		$this->bHelo = false;
 		$this->bRcpt = false;
@@ -82,8 +88,33 @@ class SmtpClient extends \MailSo\Net\NetClient
 	}
 
 	/**
+	 * @return bool
+	 */
+	public function IsSupported($sCapa)
+	{
+		return in_array(strtoupper($sCapa), $this->aCapa);
+	}
+
+	/**
+	 * @return bool
+	 */
+	public function IsAuthSupported($sAuth)
+	{
+		return in_array(strtoupper($sAuth), $this->aAuthTypes);
+	}
+
+	/**
+	 * @return bool
+	 */
+	public function HasSupportedAuth()
+	{
+		return $this->IsAuthSupported('PLAIN') || $this->IsAuthSupported('LOGIN');
+	}
+
+	/**
 	 * @param string $sServerName
 	 * @param int $iPort = 25
+	 * @param string $sEhloHost = '127.0.0.1'
 	 * @param int $iSecurityType = \MailSo\Net\Enumerations\ConnectionSecurityType::AUTO_DETECT
 	 *
 	 * @return \MailSo\Smtp\SmtpClient
@@ -92,7 +123,7 @@ class SmtpClient extends \MailSo\Net\NetClient
 	 * @throws \MailSo\Net\Exceptions\Exception
 	 * @throws \MailSo\Smtp\Exceptions\ResponseException
 	 */
-	public function Connect($sServerName, $iPort = 25,
+	public function Connect($sServerName, $iPort = 25, $sEhloHost = '127.0.0.1',
 		$iSecurityType = \MailSo\Net\Enumerations\ConnectionSecurityType::AUTO_DETECT)
 	{
 		$this->iRequestTime = microtime(true);
@@ -100,57 +131,14 @@ class SmtpClient extends \MailSo\Net\NetClient
 		parent::Connect($sServerName, $iPort, $iSecurityType);
 		$this->validateResponse(220);
 
+		$this->preLoginStartTLSAndEhloProcess($sEhloHost);
+
 		return $this;
 	}
 
 	/**
-	 * @param string $sEhloHost
-	 */
-	private function preLoginStartTLSAndEhloProcess($sEhloHost)
-	{
-		if ($this->bIsLoggined)
-		{
-			$this->writeLogException(
-				new Exceptions\RuntimeException('Already authenticated for this session'),
-				\MailSo\Log\Enumerations\Type::ERROR, true);
-		}
-
-		if ($this->bHelo)
-		{
-			$this->writeLogException(
-				new Exceptions\RuntimeException('Cannot issue EHLO/HELO to existing session'),
-				\MailSo\Log\Enumerations\Type::ERROR, true);
-		}
-
-		$this->ehloOrHelo($sEhloHost);
-
-		if (\MailSo\Net\Enumerations\ConnectionSecurityType::UseStartTLS(
-			$this->bIsStartTSLSupported, $this->iSecurityType))
-		{
-			$this->sendRequestWithCheck('STARTTLS', 220);
-			if (!@stream_socket_enable_crypto($this->rConnect, true, STREAM_CRYPTO_METHOD_TLS_CLIENT))
-			{
-				$this->writeLogException(
-					new Exceptions\RuntimeException('Cannot enable TLS'),
-					\MailSo\Log\Enumerations\Type::WARNING, true);
-			}
-
-			$this->ehloOrHelo($sEhloHost);
-		}
-		else if (\MailSo\Net\Enumerations\ConnectionSecurityType::STARTTLS === $this->iSecurityType)
-		{
-			$this->writeLogException(
-				new \MailSo\Net\Exceptions\SocketUnsuppoterdSecureConnectionException('STARTTLS is not supported'),
-				\MailSo\Log\Enumerations\Type::ERROR, true);
-		}
-
-		$this->bHelo = true;
-	}
-
-	/**
-	 * @param string $sLogin = ''
-	 * @param string $sPassword = ''
-	 * @param string $sEhloHost = '127.0.0.1'
+	 * @param string $sLogin
+	 * @param string $sPassword
 	 *
 	 * @return \MailSo\Smtp\SmtpClient
 	 *
@@ -158,84 +146,73 @@ class SmtpClient extends \MailSo\Net\NetClient
 	 * @throws \MailSo\Net\Exceptions\Exception
 	 * @throws \MailSo\Smtp\Exceptions\Exception
 	 */
-	public function Login($sLogin = '', $sPassword = '', $sEhloHost = '127.0.0.1')
+	public function Login($sLogin, $sPassword)
 	{
-		$this->preLoginStartTLSAndEhloProcess($sEhloHost);
-
-		if ('' !== $sLogin && '' !== $sPassword)
+		if ($this->IsAuthSupported('PLAIN'))
 		{
-			$sLogin = trim($sLogin);
-			$sPassword = $sPassword;
-
-			if (in_array('PLAIN', $this->aAuthTypes))
+			try
 			{
-				try
-				{
-					$this->sendRequestWithCheck('AUTH', 334, 'PLAIN');
-				}
-				catch (\MailSo\Smtp\Exceptions\NegativeResponseException $oException)
-				{
-					$this->writeLogException(
-						new \MailSo\Smtp\Exceptions\LoginBadMethodException(
-							$oException->GetResponses(), '', 0, $oException),
-						\MailSo\Log\Enumerations\Type::NOTICE, true);
-				}
-
-				try
-				{
-					$this->sendRequestWithCheck(base64_encode("\0".$sLogin."\0".$sPassword), 235, '', true);
-				}
-				catch (\MailSo\Smtp\Exceptions\NegativeResponseException $oException)
-				{
-					$this->writeLogException(
-						new \MailSo\Smtp\Exceptions\LoginBadCredentialsException(
-							$oException->GetResponses(), '', 0, $oException),
-						\MailSo\Log\Enumerations\Type::NOTICE, true);
-				}
+				$this->sendRequestWithCheck('AUTH', 334, 'PLAIN');
 			}
-			else if (in_array('LOGIN', $this->aAuthTypes))
-			{
-				try
-				{
-					$this->sendRequestWithCheck('AUTH', 334, 'LOGIN');
-				}
-				catch (\MailSo\Smtp\Exceptions\NegativeResponseException $oException)
-				{
-					$this->writeLogException(
-						new \MailSo\Smtp\Exceptions\LoginBadMethodException(
-							$oException->GetResponses(), '', 0, $oException),
-						\MailSo\Log\Enumerations\Type::NOTICE, true);
-				}
-
-				try
-				{
-					$this->sendRequestWithCheck(base64_encode($sLogin), 334, '');
-					$this->sendRequestWithCheck(base64_encode($sPassword), 235, '', true);
-				}
-				catch (\MailSo\Smtp\Exceptions\NegativeResponseException $oException)
-				{
-					$this->writeLogException(
-						new \MailSo\Smtp\Exceptions\LoginBadCredentialsException(
-							$oException->GetResponses(), '', 0, $oException),
-						\MailSo\Log\Enumerations\Type::NOTICE, true);
-				}
-			}
-			else
+			catch (\MailSo\Smtp\Exceptions\NegativeResponseException $oException)
 			{
 				$this->writeLogException(
-					new \MailSo\Smtp\Exceptions\LoginBadMethodException(),
+					new \MailSo\Smtp\Exceptions\LoginBadMethodException(
+						$oException->GetResponses(), '', 0, $oException),
+					\MailSo\Log\Enumerations\Type::NOTICE, true);
+			}
+
+			try
+			{
+				$this->sendRequestWithCheck(base64_encode("\0".$sLogin."\0".$sPassword), 235, '', true);
+			}
+			catch (\MailSo\Smtp\Exceptions\NegativeResponseException $oException)
+			{
+				$this->writeLogException(
+					new \MailSo\Smtp\Exceptions\LoginBadCredentialsException(
+						$oException->GetResponses(), '', 0, $oException),
 					\MailSo\Log\Enumerations\Type::NOTICE, true);
 			}
 		}
+		else if ($this->IsAuthSupported('LOGIN'))
+		{
+			try
+			{
+				$this->sendRequestWithCheck('AUTH', 334, 'LOGIN');
+			}
+			catch (\MailSo\Smtp\Exceptions\NegativeResponseException $oException)
+			{
+				$this->writeLogException(
+					new \MailSo\Smtp\Exceptions\LoginBadMethodException(
+						$oException->GetResponses(), '', 0, $oException),
+					\MailSo\Log\Enumerations\Type::NOTICE, true);
+			}
 
-		$this->bIsLoggined = true;
+			try
+			{
+				$this->sendRequestWithCheck(base64_encode($sLogin), 334, '');
+				$this->sendRequestWithCheck(base64_encode($sPassword), 235, '', true);
+			}
+			catch (\MailSo\Smtp\Exceptions\NegativeResponseException $oException)
+			{
+				$this->writeLogException(
+					new \MailSo\Smtp\Exceptions\LoginBadCredentialsException(
+						$oException->GetResponses(), '', 0, $oException),
+					\MailSo\Log\Enumerations\Type::NOTICE, true);
+			}
+		}
+		else
+		{
+			$this->writeLogException(
+				new \MailSo\Smtp\Exceptions\LoginBadMethodException(),
+				\MailSo\Log\Enumerations\Type::NOTICE, true);
+		}
 
 		return $this;
 	}
 
 	/**
 	 * @param string $sXOAuth2Token
-	 * @param string $sEhloHost = '127.0.0.1'
 	 *
 	 * @return \MailSo\Smtp\SmtpClient
 	 *
@@ -243,11 +220,9 @@ class SmtpClient extends \MailSo\Net\NetClient
 	 * @throws \MailSo\Net\Exceptions\Exception
 	 * @throws \MailSo\Smtp\Exceptions\Exception
 	 */
-	public function LoginWithXOauth2($sXOAuth2Token, $sEhloHost = '127.0.0.1')
+	public function LoginWithXOauth2($sXOAuth2Token)
 	{
-		$this->preLoginStartTLSAndEhloProcess($sEhloHost);
-
-		if (in_array('XOAUTH2', $this->aAuthTypes))
+		if ($this->IsAuthSupported('XOAUTH2'))
 		{
 			try
 			{
@@ -268,29 +243,27 @@ class SmtpClient extends \MailSo\Net\NetClient
 				\MailSo\Log\Enumerations\Type::NOTICE, true);
 		}
 
-		$this->bIsLoggined = true;
-
 		return $this;
 	}
 
 	/**
 	 * @param string $sFrom
+	 * @param string $sSize = ''
 	 *
 	 * @return \MailSo\Smtp\SmtpClient
 	 *
 	 * @throws \MailSo\Net\Exceptions\Exception
 	 * @throws \MailSo\Smtp\Exceptions\Exception
 	 */
-	public function MailFrom($sFrom)
+	public function MailFrom($sFrom, $sSizeIfSupported = '')
 	{
-		if (!$this->bIsLoggined)
+		$sCmd = 'FROM:<'.$sFrom.'>';
+		if (0 < strlen($sSizeIfSupported) && $this->IsSupported('SIZE'))
 		{
-			$this->writeLogException(
-				new Exceptions\RuntimeException('A valid session has not been started'),
-				\MailSo\Log\Enumerations\Type::ERROR, true);
+			$sCmd .= ' SIZE='.$sSizeIfSupported;
 		}
 
-		$this->sendRequestWithCheck('MAIL', 250, 'FROM:<'.$sFrom.'>');
+		$this->sendRequestWithCheck('MAIL', 250, $sCmd);
 
 		$this->bMail = true;
 		$this->bRcpt = false;
@@ -319,6 +292,7 @@ class SmtpClient extends \MailSo\Net\NetClient
 		$this->sendRequestWithCheck('RCPT', array(250, 251), 'TO:<'.$sTo.'>');
 
 		$this->bRcpt = true;
+
 		return $this;
 	}
 
@@ -354,6 +328,7 @@ class SmtpClient extends \MailSo\Net\NetClient
 		unset($sData);
 		$this->DataWithStream($rDataStream);
 		\MailSo\Base\ResourceRegistry::CloseMemoryResource($rDataStream);
+
 		return $this;
 	}
 
@@ -413,6 +388,7 @@ class SmtpClient extends \MailSo\Net\NetClient
 		$this->sendRequestWithCheck('.', 250);
 
 		$this->bData = true;
+
 		return $this;
 	}
 
@@ -429,6 +405,7 @@ class SmtpClient extends \MailSo\Net\NetClient
 		$this->bMail = false;
 		$this->bRcpt = false;
 		$this->bData = false;
+
 		return $this;
 	}
 
@@ -441,6 +418,7 @@ class SmtpClient extends \MailSo\Net\NetClient
 	public function Vrfy($sUser)
 	{
 		$this->sendRequestWithCheck('VRFY', array(250, 251, 252), $sUser);
+
 		return $this;
 	}
 
@@ -453,6 +431,7 @@ class SmtpClient extends \MailSo\Net\NetClient
 	public function Noop()
 	{
 		$this->sendRequestWithCheck('NOOP', 250);
+
 		return $this;
 	}
 
@@ -464,17 +443,56 @@ class SmtpClient extends \MailSo\Net\NetClient
 	 */
 	public function Logout()
 	{
-		if ($this->bIsLoggined)
+		if ($this->IsConnected())
 		{
 			$this->sendRequestWithCheck('QUIT', 221);
 		}
 
-		$this->bIsLoggined = false;
 		$this->bHelo = false;
 		$this->bMail = false;
 		$this->bRcpt = false;
 		$this->bData = false;
+
 		return $this;
+	}
+
+	/**
+	 * @param string $sEhloHost
+	 *
+	 * @return void
+	 */
+	private function preLoginStartTLSAndEhloProcess($sEhloHost)
+	{
+		if ($this->bHelo)
+		{
+			$this->writeLogException(
+				new Exceptions\RuntimeException('Cannot issue EHLO/HELO to existing session'),
+				\MailSo\Log\Enumerations\Type::ERROR, true);
+		}
+
+		$this->ehloOrHelo($sEhloHost);
+
+		if (\MailSo\Net\Enumerations\ConnectionSecurityType::UseStartTLS(
+			$this->IsSupported('STARTTLS'), $this->iSecurityType, $this->HasSupportedAuth()))
+		{
+			$this->sendRequestWithCheck('STARTTLS', 220);
+			if (!@stream_socket_enable_crypto($this->rConnect, true, STREAM_CRYPTO_METHOD_TLS_CLIENT))
+			{
+				$this->writeLogException(
+					new \MailSo\Smtp\Exceptions\RuntimeException('Cannot enable STARTTLS'),
+					\MailSo\Log\Enumerations\Type::WARNING, true);
+			}
+
+			$this->ehloOrHelo($sEhloHost);
+		}
+		else if (\MailSo\Net\Enumerations\ConnectionSecurityType::STARTTLS === $this->iSecurityType)
+		{
+			$this->writeLogException(
+				new \MailSo\Net\Exceptions\SocketUnsuppoterdSecureConnectionException('STARTTLS is not supported'),
+				\MailSo\Log\Enumerations\Type::ERROR, true);
+		}
+
+		$this->bHelo = true;
 	}
 
 	/**
@@ -482,7 +500,7 @@ class SmtpClient extends \MailSo\Net\NetClient
 	 * @param string $sAddToCommand = ''
 	 * @param bool $bSecureLog = false
 	 *
-	 * @return \MailSo\Smtp\SmtpClient
+	 * @return void
 	 *
 	 * @throws \MailSo\Base\Exceptions\InvalidArgumentException
 	 * @throws \MailSo\Net\Exceptions\Exception
@@ -505,6 +523,7 @@ class SmtpClient extends \MailSo\Net\NetClient
 
 		$this->iRequestTime = microtime(true);
 		$this->sendRaw($sRealCommand, true, $sFakeCommand);
+
 		return $this;
 	}
 
@@ -514,7 +533,7 @@ class SmtpClient extends \MailSo\Net\NetClient
 	 * @param string $sAddToCommand = ''
 	 * @param bool $bSecureLog = false
 	 *
-	 * @return \MailSo\Smtp\SmtpClient
+	 * @return void
 	 *
 	 * @throws \MailSo\Base\Exceptions\InvalidArgumentException
 	 * @throws \MailSo\Net\Exceptions\Exception
@@ -523,11 +542,12 @@ class SmtpClient extends \MailSo\Net\NetClient
 	private function sendRequestWithCheck($sCommand, $mExpectCode, $sAddToCommand = '', $bSecureLog = false)
 	{
 		$this->sendRequest($sCommand, $sAddToCommand, $bSecureLog);
-		return $this->validateResponse($mExpectCode);
+		$this->validateResponse($mExpectCode);
 	}
 
 	/**
 	 * @param string $sHost
+	 *
 	 * @return void
 	 */
 	private function ehloOrHelo($sHost)
@@ -538,11 +558,14 @@ class SmtpClient extends \MailSo\Net\NetClient
 		}
 		catch (\Exception $oException)
 		{
-			$this->helo($sHost);
-		}
-		catch (\Exception $oException)
-		{
-			throw $oException;
+			try
+			{
+				$this->helo($sHost);
+			}
+			catch (\Exception $oException)
+			{
+				throw $oException;
+			}
 		}
 
 		return $this;
@@ -563,20 +586,30 @@ class SmtpClient extends \MailSo\Net\NetClient
 		foreach ($this->aResults as $sLine)
 		{
 			$aMatch = array();
-			if (preg_match('/[\d]+[ \-](.+)$/', $sLine, $aMatch) && isset($aMatch[1]) && 0 < strlen($aMatch[1]))
+			if (\preg_match('/[\d]+[ \-](.+)$/', $sLine, $aMatch) && isset($aMatch[1]) && 0 < \strlen($aMatch[1]))
 			{
-				$sLine = trim($aMatch[1]);
-				if (0 === strpos($sLine, 'AUTH '))
+				$sLine = \trim($aMatch[1]);
+				$aLine = \preg_split('/[ =]/', $sLine, 2);
+				if (\is_array($aLine) && 0 < \count($aLine) && !empty($aLine[0]))
 				{
-					$sAuthLine = substr($sLine, 5);
-					if (0 < strlen($sAuthLine))
+					$sCapa = \strtoupper($aLine[0]);
+					if (('AUTH' === $sCapa || 'SIZE' === $sCapa) && !empty($aLine[1]))
 					{
-						$this->aAuthTypes = explode(' ', $sAuthLine);
+						$sSubLine = \trim(\strtoupper($aLine[1]));
+						if (0 < \strlen($sSubLine))
+						{
+							if ('AUTH' === $sCapa)
+							{
+								$this->aAuthTypes = \explode(' ', $sSubLine);
+							}
+							else if ('SIZE' === $sCapa && \is_numeric($sSubLine))
+							{
+								$this->iSizeCapaValue = (int) $sSubLine;
+							}
+						}
 					}
-				}
-				else if (0 === strpos($sLine, 'STARTTLS'))
-				{
-					$this->bIsStartTSLSupported = true;
+
+					$this->aCapa[] = $sCapa;
 				}
 			}
 		}
@@ -594,13 +627,14 @@ class SmtpClient extends \MailSo\Net\NetClient
 	{
 		$this->sendRequestWithCheck('HELO', 250, $sHost);
 		$this->aAuthTypes = array();
-		$this->bIsStartTSLSupported = false;
+		$this->iSizeCapaValue = 0;
+		$this->aCapa = array();
 	}
 
 	/**
 	 * @param int|array $mExpectCode
 	 *
-	 * @return string
+	 * @return void
 	 *
 	 * @throws \MailSo\Smtp\Exceptions\ResponseException
 	 */
@@ -615,40 +649,37 @@ class SmtpClient extends \MailSo\Net\NetClient
 			$mExpectCode = array_map('intval', $mExpectCode);
 		}
 
-		$aParts = array('', '');
+		$aParts = array('', '', '');
 		$this->aResults = array();
 		do
 		{
 			$this->getNextBuffer();
 			$aParts = preg_split('/([\s-]+)/', $this->sResponseBuffer, 2, PREG_SPLIT_DELIM_CAPTURE);
 
-			if (!is_array($aParts) || 3 !== count($aParts)
-				|| !is_numeric($aParts[0]))
+			if (is_array($aParts) && 3 === count($aParts) && is_numeric($aParts[0]))
 			{
-				if (!in_array((int) $aParts[0], $mExpectCode))
+				if ('-' !== trim($aParts[1]) && !in_array((int) $aParts[0], $mExpectCode))
 				{
 					$this->writeLogException(
 						new Exceptions\NegativeResponseException(trim(
 							(0 < count($this->aResults) ? implode("\r\n", $this->aResults)."\r\n" : '').
 							$this->sResponseBuffer)), \MailSo\Log\Enumerations\Type::ERROR, true);
 				}
-				else
-				{
-					$this->writeLogException(
-						new Exceptions\ResponseException(trim(
-							(0 < count($this->aResults) ? implode("\r\n", $this->aResults)."\r\n" : '').
-							$this->sResponseBuffer)), \MailSo\Log\Enumerations\Type::ERROR, true);
-				}
+			}
+			else
+			{
+				$this->writeLogException(
+					new Exceptions\ResponseException(trim(
+						(0 < count($this->aResults) ? implode("\r\n", $this->aResults)."\r\n" : '').
+						$this->sResponseBuffer)), \MailSo\Log\Enumerations\Type::ERROR, true);
 			}
 
 			$this->aResults[] = $this->sResponseBuffer;
 		}
-		while (0 === strpos($aParts[1], '-'));
+		while ('-' === \trim($aParts[1]));
 
 		$this->writeLog((microtime(true) - $this->iRequestTime),
 			\MailSo\Log\Enumerations\Type::TIME);
-
-		return $aParts[2];
 	}
 
 	/**

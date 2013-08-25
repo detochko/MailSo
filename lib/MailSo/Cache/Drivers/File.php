@@ -82,6 +82,22 @@ class File implements \MailSo\Cache\DriverInterface
 	}
 
 	/**
+	 * @param int $iTimeToClearInHours = 24
+	 * 
+	 * @return bool
+	 */
+	public function GC($iTimeToClearInHours = 24)
+	{
+		if (0 < $iTimeToClearInHours)
+		{
+			\MailSo\Base\Utils::RecTimeDirRemove($this->sCacheFolder, 60 * 60 * $iTimeToClearInHours, \time());
+			return true;
+		}
+		
+		return false;
+	}
+
+	/**
 	 * @param string $sKey
 	 * @param bool $bMkDir = false
 	 *
@@ -92,7 +108,7 @@ class File implements \MailSo\Cache\DriverInterface
 		$sFilePath = '';
 		if (3 < \strlen($sKey))
 		{
-			$sKeyPath = \md5($sKey);
+			$sKeyPath = \sha1($sKey);
 			$sKeyPath = \substr($sKeyPath, 0, 2).'/'.\substr($sKeyPath, 2, 2).'/'.$sKeyPath;
 
 			$sFilePath = $this->sCacheFolder.'/'.$sKeyPath;

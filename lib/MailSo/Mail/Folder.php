@@ -54,14 +54,14 @@ class Folder
 			$this->oImapFolder = $oImapFolder;
 			$this->oSubFolders = null;
 
-			$aNames = explode($this->oImapFolder->Delimiter(), $this->oImapFolder->FullNameRaw());
-			$this->iNestingLevel = count($aNames);
+			$aNames = \explode($this->oImapFolder->Delimiter(), $this->oImapFolder->FullNameRaw());
+			$this->iNestingLevel = \count($aNames);
 
 			$this->sParentFullNameRaw = '';
 			if (1 < $this->iNestingLevel)
 			{
-				array_pop($aNames);
-				$this->sParentFullNameRaw = implode($this->oImapFolder->Delimiter(), $aNames);
+				\array_pop($aNames);
+				$this->sParentFullNameRaw = \implode($this->oImapFolder->Delimiter(), $aNames);
 			}
 
 			$this->bSubscribed = $bSubscribed;
@@ -99,7 +99,7 @@ class Folder
 	public static function NewNonExistenInstance($sFullNameRaw, $sDelimiter)
 	{
 		return self::NewInstance(
-			\MailSo\Imap\Folder::NewInstance($sFullNameRaw, $sDelimiter, array('/Noselect')), true, false);
+			\MailSo\Imap\Folder::NewInstance($sFullNameRaw, $sDelimiter, array('\NoSelect')), true, false);
 	}
 
 	/**
@@ -215,7 +215,7 @@ class Folder
 			});
 		}
 
-		return 0 < count($sList);
+		return 0 < \count($sList);
 	}
 
 	/**
@@ -239,7 +239,7 @@ class Folder
 	 */
 	public function IsSelectable()
 	{
-		return $this->oImapFolder->IsSelectable();
+		return $this->IsExisten() && $this->oImapFolder->IsSelectable();
 	}
 
 	/**
@@ -266,35 +266,35 @@ class Folder
 		$aFlags = $this->oImapFolder->FlagsLowerCase();
 		$iXListType = \MailSo\Imap\Enumerations\FolderType::USER;
 
-		if (is_array($aFlags))
+		if (\is_array($aFlags))
 		{
 			switch (true)
 			{
-				case in_array('\inbox', $aFlags):
+				case \in_array('\inbox', $aFlags):
 					$iXListType = \MailSo\Imap\Enumerations\FolderType::INBOX;
 					break;
-				case in_array('\sent', $aFlags):
+				case \in_array('\sent', $aFlags):
 					$iXListType = \MailSo\Imap\Enumerations\FolderType::SENT;
 					break;
-				case in_array('\drafts', $aFlags):
+				case \in_array('\drafts', $aFlags):
 					$iXListType = \MailSo\Imap\Enumerations\FolderType::DRAFTS;
 					break;
-				case in_array('\spam', $aFlags):
+				case \in_array('\spam', $aFlags):
 					$iXListType = \MailSo\Imap\Enumerations\FolderType::SPAN;
 					break;
-				case in_array('\bin', $aFlags):
-				case in_array('\trash', $aFlags):
+				case \in_array('\bin', $aFlags):
+				case \in_array('\trash', $aFlags):
 					$iXListType = \MailSo\Imap\Enumerations\FolderType::TRASH;
 					break;
-				case in_array('\important', $aFlags):
+				case \in_array('\important', $aFlags):
 					$iXListType = \MailSo\Imap\Enumerations\FolderType::IMPORTANT;
 					break;
-				case in_array('\starred', $aFlags):
+				case \in_array('\starred', $aFlags):
 					$iXListType = \MailSo\Imap\Enumerations\FolderType::STARRED;
 					break;
-				case in_array('\all', $aFlags):
-				case in_array('\archive', $aFlags):
-				case in_array('\allmail', $aFlags):
+				case \in_array('\all', $aFlags):
+				case \in_array('\archive', $aFlags):
+				case \in_array('\allmail', $aFlags):
 					$iXListType = \MailSo\Imap\Enumerations\FolderType::ALLMAIL;
 					break;
 			}

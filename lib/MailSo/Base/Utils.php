@@ -30,7 +30,8 @@ class Utils
 		'viscii', 'tcvn', 'hp-roman8', 'nextstep',
 		'utf-8', 'ucs-2', 'ucs-2be', 'ucs-2le', 'ucs-4', 'ucs-4be', 'ucs-4le',
 		'utf-16', 'utf-16be', 'utf-16le', 'utf-32', 'utf-32be', 'utf-32le', 'utf-7',
-		'c99', 'java', 'ucs-2-internal', 'ucs-4-internal');
+		'c99', 'java', 'ucs-2-internal', 'ucs-4-internal'
+	);
 
 	/**
 	 * @access private
@@ -90,7 +91,15 @@ class Utils
 	 */
 	public static function IsIconvSupported()
 	{
-		return \function_exists('iconv');
+		return \MailSo\Base\Utils::FunctionExistsAndEnabled('iconv');
+	}
+
+	/**
+	 * @return bool
+	 */
+	public static function IsLibIconvSupported()
+	{
+		return \MailSo\Base\Utils::FunctionExistsAndEnabled('libiconv');
 	}
 
 	/**
@@ -98,7 +107,7 @@ class Utils
 	 */
 	public static function IsMbStringSupported()
 	{
-		return \function_exists('mb_convert_encoding');
+		return \MailSo\Base\Utils::FunctionExistsAndEnabled('mb_convert_encoding');
 	}
 
 	/**
@@ -175,19 +184,26 @@ class Utils
 
 			case ($sFromEncoding === \MailSo\Base\Enumerations\Charset::UTF_7_IMAP):
 
-				$sResult = \MailSo\Base\Utils::ConvertEncoding(\MailSo\Base\Utils::ModifiedToPlainUtf7($sResult),
-					\MailSo\Base\Enumerations\Charset::UTF_7, $sToEncoding);
+				$sResult = \MailSo\Base\Utils::ConvertEncoding(
+					\MailSo\Base\Utils::ModifiedToPlainUtf7($sResult),
+					\MailSo\Base\Enumerations\Charset::UTF_7,
+					$sToEncoding
+				);
 				break;
 
 			case (\in_array(\strtolower($sFromEncoding), \MailSo\Base\Utils::$SuppostedCharsets)):
 
 				if (\MailSo\Base\Utils::IsIconvSupported())
 				{
-					$sResult = @\iconv($sFromEncoding, $sToEncoding.'//IGNORE', $sResult);
+					$sResult = @\iconv(\strtoupper($sFromEncoding), \strtoupper($sToEncoding).'//IGNORE', $sResult);
 				}
 				else if (\MailSo\Base\Utils::IsMbStringSupported())
 				{
-					$sResult = @\mb_convert_encoding($sResult, $sToEncoding, $sFromEncoding);
+					$sResult = @\mb_convert_encoding($sResult, \strtoupper($sToEncoding), \strtoupper($sFromEncoding));
+				}
+				else if (\MailSo\Base\Utils::IsLibIconvSupported())
+				{
+					 $sResult = @\libiconv(\strtoupper($sFromEncoding), \strtoupper($sToEncoding), $sResult);
 				}
 
 				$sResult = (false !== $sResult) ? $sResult : $sInputString;
@@ -271,7 +287,6 @@ class Utils
 		$sValue = \preg_replace('/\?=[\n\r\t\s]{1,5}=\?/m', '?==?', $sValue);
 		$sValue = \preg_replace('/[\r\n\t]+/m', ' ', $sValue);
 
-		// search encoded places
 		$aEncodeArray = array('');
 		$aMatch = array();
 		\preg_match_all('/=\?[^\?]+\?[q|b|Q|B]\?[^\?]*(\?=)/', $sValue, $aMatch);
@@ -293,9 +308,13 @@ class Utils
 			$aEncodeArray = $aMatch[0];
 		}
 
+		$aParts = array();
+
+		$sMainCharset = '';
+		$bOneCharset = true;
+
 		for ($iIndex = 0, $iLen = \count($aEncodeArray); $iIndex < $iLen; $iIndex++)
 		{
-			// QB decode string
 			$aTempArr = array('', $aEncodeArray[$iIndex]);
 			if ('=?' === \substr(\trim($aTempArr[1]), 0, 2))
 			{
@@ -320,12 +339,43 @@ class Utils
 			if (0 < \strlen($aTempArr[0]))
 			{
 				$sCharset = 0 === \strlen($sForcedIncomingCharset) ? $aTempArr[0] : $sForcedIncomingCharset;
-				$sValue = \str_replace($aEncodeArray[$iIndex],
-					\MailSo\Base\Utils::ConvertEncoding($aTempArr[1], $sCharset, \MailSo\Base\Enumerations\Charset::UTF_8),
-					$sValue);
+				
+				if ('' === $sMainCharset)
+				{
+					$sMainCharset = $sCharset;
+				}
+				else if ($sMainCharset !== $sCharset)
+				{
+					$bOneCharset = false;
+				}
 			}
 
+			$aParts[] = array(
+				$aEncodeArray[$iIndex],
+				$aTempArr[1],
+				$sCharset
+			);
+
 			unset($aTempArr);
+		}
+
+		for ($iIndex = 0, $iLen = \count($aParts); $iIndex < $iLen; $iIndex++)
+		{
+			if ($bOneCharset)
+			{
+				$sValue = \str_replace($aParts[$iIndex][0], $aParts[$iIndex][1], $sValue);
+			}
+			else
+			{
+				$sValue = \str_replace($aParts[$iIndex][0],
+					\MailSo\Base\Utils::ConvertEncoding($aParts[$iIndex][1], $aParts[$iIndex][2], \MailSo\Base\Enumerations\Charset::UTF_8),
+					$sValue);
+			}
+		}
+
+		if ($bOneCharset && 0 < \strlen($sMainCharset))
+		{
+			$sValue = \MailSo\Base\Utils::ConvertEncoding($sValue, $sMainCharset, \MailSo\Base\Enumerations\Charset::UTF_8);
 		}
 
 		return $sValue;
@@ -506,6 +556,7 @@ class Utils
 			'conf'	=> 'text/plain',
 			'rtx'	=> 'text/richtext',
 			'vcard'	=> 'text/vcard',
+			'vcf'	=> 'text/vcard',
 			'htm'	=> 'text/html',
 			'html'	=> 'text/html',
 			'csv'	=> 'text/csv',
@@ -637,10 +688,14 @@ class Utils
 
 			// ms office
 			'doc'	=> 'application/msword',
-			'docx'	=> 'application/msword',
+			'dot'	=> 'application/msword',
 			'rtf'	=> 'application/rtf',
 			'xls'	=> 'application/vnd.ms-excel',
 			'ppt'	=> 'application/vnd.ms-powerpoint',
+			'docx'	=> 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+			'xlsx'	=> 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+			'dotx'	=> 'application/vnd.openxmlformats-officedocument.wordprocessingml.template',
+			'pptx'	=> 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
 
 			// open office
 			'odt'	=> 'application/vnd.oasis.opendocument.text',
@@ -672,8 +727,7 @@ class Utils
 		if (null === $bValidateAction)
 		{
 			$bValidateAction = !((bool) @\ini_get('safe_mode')) &&
-				\function_exists('set_time_limit') &&
-				\is_callable('set_time_limit');
+				\MailSo\Base\Utils::FunctionExistsAndEnabled('set_time_limit');
 		}
 
 		if ($bValidateAction)
@@ -813,14 +867,14 @@ class Utils
 	 */
 	public static function CopyDir($sSource, $sDestination)
 	{
-		if (is_dir($sSource))
+		if (\is_dir($sSource))
 		{
-			if (!is_dir($sDestination))
+			if (!\is_dir($sDestination))
 			{
-				mkdir($sDestination);
+				\mkdir($sDestination);
 			}
 
-			$oDirectory = dir($sSource);
+			$oDirectory = \dir($sSource);
 			if ($oDirectory)
 			{
 				while (false !== ($sRead = $oDirectory->read()))
@@ -831,18 +885,112 @@ class Utils
 					}
 
 					$sPathDir = $sSource.'/'.$sRead;
-					if (is_dir($sPathDir))
+					if (\is_dir($sPathDir))
 					{
-						self::CopyDir($sPathDir, $sDestination.'/'.$sRead);
+						\MailSo\Base\Utils::CopyDir($sPathDir, $sDestination.'/'.$sRead);
 						continue;
 					}
 
-					copy($sPathDir, $sDestination.'/'.$sRead);
+					\copy($sPathDir, $sDestination.'/'.$sRead);
 				}
 
 				$oDirectory->close();
 			}
 		}
+	}
+
+	/**
+	 * @param string $sTempPath
+	 * @param int $iTime2Kill
+	 * @param int $iNow
+	 *
+	 * @return bool
+	 */
+	public static function RecTimeDirRemove($sTempPath, $iTime2Kill, $iNow)
+	{
+		$iFileCount = 0;
+
+		$sTempPath = rtrim($sTempPath, '\\/');
+		if (@\is_dir($sTempPath))
+		{
+			$rDirH = @\opendir($sTempPath);
+			if ($rDirH)
+			{
+				$bRemoveAllDirs = true;
+				while (($sFile = @\readdir($rDirH)) !== false)
+				{
+					if ('.' !== $sFile && '..' !== $sFile)
+					{
+						if (@\is_dir($sTempPath.'/'.$sFile))
+						{
+							if (!\MailSo\Base\Utils::RecTimeDirRemove($sTempPath.'/'.$sFile, $iTime2Kill, $iNow))
+							{
+								$bRemoveAllDirs = false;
+							}
+						}
+						else
+						{
+							$iFileCount++;
+						}
+					}
+				}
+
+				@\closedir($rDirH);
+			}
+
+			if ($iFileCount > 0)
+			{
+				if (\MailSo\Base\Utils::TimeFilesRemove($sTempPath, $iTime2Kill, $iNow))
+				{
+					return @\rmdir($sTempPath);
+				}
+			}
+			else
+			{
+				return $bRemoveAllDirs ? @\rmdir($sTempPath) : false;
+			}
+
+			return false;
+		}
+
+		return true;
+	}
+
+	/**
+	 * @param string $sTempPath
+	 * @param int $iTime2Kill
+	 * @param int $iNow
+	 */
+	public static function TimeFilesRemove($sTempPath, $iTime2Kill, $iNow)
+	{
+		$bResult = true;
+
+		$sTempPath = rtrim($sTempPath, '\\/');
+		if (@\is_dir($sTempPath))
+		{
+			$rDirH = @\opendir($sTempPath);
+			if ($rDirH)
+			{
+				while (($sFile = @\readdir($rDirH)) !== false)
+				{
+					if ($sFile !== '.' && $sFile !== '..')
+					{
+						if ($iNow - \filemtime($sTempPath.'/'.$sFile) > $iTime2Kill)
+						{
+							@\unlink($sTempPath.'/'.$sFile);
+						}
+						else
+						{
+							$bResult = false;
+						}
+					}
+				}
+				
+				@\closedir($rDirH);
+			}
+		}
+		
+		return $bResult;
 	}
 
 	/**
@@ -899,6 +1047,19 @@ class Utils
 	/**
 	 * @param string $sString
 	 *
+	 * @return bool
+	 */
+	public static function IsRTL($sUtfString)
+	{
+		// \x{0591}-\x{05F4} - Hebrew
+		// \x{FB1D}-\x{FB40} - Hebrew ?
+		// \x{0621}-\x{064A} - Arabic
+		return 0 < (int) preg_match('/[\x{0591}-\x{05F4}\x{FB1D}-\x{FB40}\x{0621}-\x{064A}]/u', $sUtfString);
+	}
+
+	/**
+	 * @param string $sString
+	 *
 	 * @return string
 	 */
 	public static function Base64Decode($sString)
@@ -907,6 +1068,8 @@ class Utils
 		if (false === $sResultString)
 		{
 			$sString = \str_replace(array(' ', "\r", "\n", "\t"), '', $sString);
+			$sString = \preg_replace('/[^a-zA-Z0-9=+\/](.*)$/', '', $sString);
+
 			if (false !== \strpos(\trim(\trim($sString), '='), '='))
 			{
 				$sString = \preg_replace('/=([^=])/', '= $1', $sString);
@@ -969,7 +1132,7 @@ class Utils
 		{
 			while (!\feof($fResource))
 			{
-				$sBuffer = \fread($fResource, $iBufferLen);
+				$sBuffer = @\fread($fResource, $iBufferLen);
 				if (false !== $sBuffer)
 				{
 					echo $sBuffer;
@@ -1337,5 +1500,124 @@ class Utils
 		}
 
 		return $sReturn;
+	}
+
+	/**
+	 * @param string $sFunctionName
+	 *
+	 * @return bool
+	 */
+	public static function FunctionExistsAndEnabled($sFunctionName)
+	{
+		static $aCache = null;
+		if (empty($sFunctionName) || !\function_exists($sFunctionName) || !\is_callable($sFunctionName))
+		{
+			return false;
+		}
+
+		if (null === $aCache)
+		{
+			$sDisableFunctions = @\ini_get('disable_functions');
+			$sDisableFunctions = \is_string($sDisableFunctions) && 0 < \strlen($sDisableFunctions) ? $sDisableFunctions : '';
+
+			$aCache = \explode(',', $sDisableFunctions);
+			$aCache = is_array($aCache) && 0 < count($aCache) ? $aCache : array();
+
+			if (\extension_loaded('suhosin'))
+			{
+				 $sSuhosin = @\ini_get('suhosin.executor.func.blacklist');
+				 $sSuhosin = \is_string($sSuhosin) && 0 < \strlen($sSuhosin) ? $sSuhosin : '';
+
+				 $aSuhosinCache = \explode(',', $sSuhosin);
+				 $aSuhosinCache = is_array($aSuhosinCache) && 0 < count($aSuhosinCache) ? $aSuhosinCache : array();
+
+				 if (0 < \count($aSuhosinCache))
+				 {
+					 $aCache = array_merge($aCache, $aSuhosinCache);
+					 $aCache = array_unique($aCache);
+				 }
+			}
+		}
+
+		return !\in_array($sFunctionName, $aCache);
+	}
+
+	/**
+	 * @param string $mValue
+	 *
+	 * @return string
+	 */
+	public static function ClearNullBite($mValue)
+	{
+		return \str_replace('%00', '', $mValue);
+	}
+
+	/**
+	 * @param mixed $mValue
+	 * @param bool $bClearNullBite = false
+	 *
+	 * @return mixed
+	 */
+	public static function StripSlashesValue($mValue, $bClearNullBite = false)
+	{
+		static $bIsMagicQuotesOn = null;
+		if (null === $bIsMagicQuotesOn)
+		{
+			$bIsMagicQuotesOn = (bool) @\ini_get('magic_quotes_gpc');
+		}
+
+		if (!$bIsMagicQuotesOn)
+		{
+			return $bClearNullBite && \is_string($mValue) ? \MailSo\Base\Utils::ClearNullBite($mValue) : $mValue;
+		}
+
+		$sType = \gettype($mValue);
+		if ('string' === $sType)
+		{
+			return \stripslashes($bClearNullBite ? \MailSo\Base\Utils::ClearNullBite($mValue) : $mValue);
+		}
+		else if ('array' === $sType)
+		{
+			$aReturnValue = array();
+			$mValueKeys = \array_keys($mValue);
+			foreach ($mValueKeys as $sKey)
+			{
+				$aReturnValue[$sKey] = \MailSo\Base\Utils::StripSlashesValue($mValue[$sKey], $bClearNullBite);
+			}
+
+			return $aReturnValue;
+		}
+
+		return $mValue;
+	}
+
+	/**
+	 * @param string $sStr
+	 *
+	 * @return string
+	 */
+	public static function CharsetDetect($sStr)
+	{
+		$mResult = '';
+		if (!\MailSo\Base\Utils::IsAscii($sStr))
+		{
+			$mResult = \MailSo\Base\Utils::FunctionExistsAndEnabled('mb_detect_encoding') ?
+				@\mb_detect_encoding($sStr, 'auto', true) : false;
+
+			if (false === $mResult && \MailSo\Base\Utils::IsIconvSupported())
+			{
+				foreach (array('utf-8', 'iso-8859-1', 'windows-1251') as $sCharsetItem)
+				{
+					$sSample = @\iconv($sCharsetItem, $sCharsetItem.'//IGNORE', $sStr);
+					if (\md5($sSample) === \md5($sStr))
+					{
+						$mResult = $sCharsetItem;
+						break;
+					}
+				}
+			}
+		}
+		
+		return !empty($mResult) && \is_string($mResult) ? $mResult : '';
 	}
 }

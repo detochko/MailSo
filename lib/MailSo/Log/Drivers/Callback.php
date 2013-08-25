@@ -45,7 +45,7 @@ class Callback extends \MailSo\Log\Driver
 	}
 
 	/**
-	 * @param string $sDesc
+	 * @param string|array $sDesc
 	 *
 	 * @return bool
 	 */
@@ -58,7 +58,7 @@ class Callback extends \MailSo\Log\Driver
 
 		return true;
 	}
-
+	
 	/**
 	 * @return bool
 	 */

@@ -210,8 +210,15 @@ abstract class NetClient
 
 		if ($this->rConnect)
 		{
-			\stream_set_timeout($this->rConnect, $this->iSocketTimeOut);
-			\stream_set_blocking($this->rConnect, 1);
+			if (\MailSo\Base\Utils::FunctionExistsAndEnabled('stream_set_timeout'))
+			{
+				@\stream_set_timeout($this->rConnect, $this->iSocketTimeOut);
+			}
+			
+			if (\MailSo\Base\Utils::FunctionExistsAndEnabled('stream_set_blocking'))
+			{
+				@\stream_set_blocking($this->rConnect, 1);
+			}
 		}
 	}
 
@@ -330,23 +337,24 @@ abstract class NetClient
 	}
 
 	/**
-	 * @param int $iReadLen
+	 * @param mixed $mReadLen = null
+	 * @param bool $bForceLogin = false
 	 *
 	 * @return void
 	 *
 	 * @throws \MailSo\Net\Exceptions\SocketConnectionDoesNotAvailableException
 	 * @throws \MailSo\Net\Exceptions\SocketReadException
 	 */
-	protected function getNextBuffer($iReadLen = null)
+	protected function getNextBuffer($mReadLen = null, $bForceLogin = false)
 	{
-		if (null === $iReadLen)
+		if (null === $mReadLen)
 		{
 			$this->sResponseBuffer = @\fgets($this->rConnect);
 		}
 		else
 		{
 			$this->sResponseBuffer = '';
-			$iRead = $iReadLen;
+			$iRead = $mReadLen;
 			while (0 < $iRead)
 			{
 				$sAddRead = @\fread($this->rConnect, $iRead);
@@ -383,14 +391,14 @@ abstract class NetClient
 		else
 		{
 			$iReadedLen = \strlen($this->sResponseBuffer);
-			if (null === $iReadLen)
+			if (null === $mReadLen || $bForceLogin)
 			{
 				$this->writeLogWithCrlf('< '.$this->sResponseBuffer, //.' ['.$iReadedLen.']',
 					\MailSo\Log\Enumerations\Type::INFO);
 			}
 			else
 			{
-				$this->writeLog('Received '.$iReadedLen.'/'.$iReadLen.' bytes.',
+				$this->writeLog('Received '.$iReadedLen.'/'.$mReadLen.' bytes.',
 					\MailSo\Log\Enumerations\Type::INFO);
 			}
 

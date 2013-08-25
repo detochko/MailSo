@@ -64,7 +64,7 @@ class Http
 	 */
 	public function GetQuery($sKey, $mDefault = null, $bClearPercZeroZero = true)
 	{
-		return (isset($_GET[$sKey])) ? $this->stripSlashesValue($_GET[$sKey], $bClearPercZeroZero) : $mDefault;
+		return isset($_GET[$sKey]) ? \MailSo\Base\Utils::StripSlashesValue($_GET[$sKey], $bClearPercZeroZero) : $mDefault;
 	}
 
 	/**
@@ -72,7 +72,7 @@ class Http
 	 */
 	public function GetQueryAsArray()
 	{
-		return (isset($_GET) && \is_array($_GET)) ? $this->stripSlashesValue($_GET, true) : null;
+		return isset($_GET) && \is_array($_GET) ? \MailSo\Base\Utils::StripSlashesValue($_GET, true) : null;
 	}
 
 	/**
@@ -94,7 +94,7 @@ class Http
 	 */
 	public function GetPost($sKey, $mDefault = null, $bClearPercZeroZero = false)
 	{
-		return (isset($_POST[$sKey])) ? $this->stripSlashesValue($_POST[$sKey], $bClearPercZeroZero) : $mDefault;
+		return isset($_POST[$sKey]) ? \MailSo\Base\Utils::StripSlashesValue($_POST[$sKey], $bClearPercZeroZero) : $mDefault;
 	}
 
 	/**
@@ -102,7 +102,7 @@ class Http
 	 */
 	public function GetPostAsArray()
 	{
-		return (isset($_POST) && \is_array($_POST)) ? $this->stripSlashesValue($_POST, false) : null;
+		return isset($_POST) && \is_array($_POST) ? \MailSo\Base\Utils::StripSlashesValue($_POST, false) : null;
 	}
 
 	/**
@@ -123,28 +123,7 @@ class Http
 	 */
 	public function GetRequest($sKey, $mDefault = null)
 	{
-		return (isset($_REQUEST[$sKey])) ? $this->stripSlashesValue($_REQUEST[$sKey]) : $mDefault;
-	}
-
-	/**
-	 * @param string $sKey
-	 *
-	 * @return bool
-	 */
-	public function HasCookie($sKey)
-	{
-		return isset($_COOKIE[$sKey]);
-	}
-
-	/**
-	 * @param string $sKey
-	 * @param mixed $mDefault = null
-	 *
-	 * @return mixed
-	 */
-	public function GetCookie($sKey, $mDefault = null)
-	{
-		return (isset($_COOKIE[$sKey])) ? $this->stripSlashesValue($_COOKIE[$sKey]) : $mDefault;
+		return isset($_REQUEST[$sKey]) ? \MailSo\Base\Utils::StripSlashesValue($_REQUEST[$sKey]) : $mDefault;
 	}
 
 	/**
@@ -165,7 +144,7 @@ class Http
 	 */
 	public function GetServer($sKey, $mDefault = null)
 	{
-		return (isset($_SERVER[$sKey])) ? $_SERVER[$sKey] : $mDefault;
+		return isset($_SERVER[$sKey]) ? $_SERVER[$sKey] : $mDefault;
 	}
 
 	/**
@@ -186,7 +165,7 @@ class Http
 	 */
 	public function GetEnv($sKey, $mDefault = null)
 	{
-		return (isset($_ENV[$sKey])) ? $_ENV[$sKey] : $mDefault;
+		return isset($_ENV[$sKey]) ? $_ENV[$sKey] : $mDefault;
 	}
 
 	/**
@@ -232,10 +211,19 @@ class Http
 	/**
 	 * @return bool
 	 */
+	public function CheckLocalhost($sServer)
+	{
+		return \in_array(\strtolower(\trim($sServer)), array(
+			'127.0.0.1', 'localhost', '::1'
+		));
+	}
+
+	/**
+	 * @return bool
+	 */
 	public function IsLocalhost()
 	{
-		$sRemoteAddr = $this->GetServer('REMOTE_ADDR', '');
-		return '127.0.0.1' === $sRemoteAddr || '::1' === $sRemoteAddr;
+		return $this->CheckLocalhost($this->GetServer('REMOTE_ADDR', ''));
 	}
 
 	/**
@@ -263,7 +251,8 @@ class Http
 		$sServerKey = 'HTTP_'.\strtoupper(\str_replace('-', '_', $sHeader));
 		$sResultHeader = $this->GetServer($sServerKey, '');
 
-		if (0 === strlen($sResultHeader) && \function_exists('apache_request_headers'))
+		if (0 === \strlen($sResultHeader) &&
+			\MailSo\Base\Utils::FunctionExistsAndEnabled('apache_request_headers'))
 		{
 			$sHeaders = \apache_request_headers();
 			if (isset($sHeaders[$sHeader]))
@@ -317,7 +306,8 @@ class Http
 
 		if ($bWithRemoteUserData)
 		{
-			$sHost = ($this->HasServer('REMOTE_USER') ? $this->GetServer('REMOTE_USER', '').'@' : '').$sHost;
+			$sUser = \trim($this->HasServer('REMOTE_USER') ? $this->GetServer('REMOTE_USER', '') : '');
+			$sHost = (0 < \strlen($sUser) ? $sUser.'@' : '').$sHost;
 		}
 
 		return $sHost;
@@ -345,6 +335,137 @@ class Http
 		}
 
 		return $sIp;
+	}
+	
+	/**
+	 * @return string
+	 */
+	public function SendGetRequest($sHostName, $iPort = 80, $sUri = '/')
+	{
+		$aHeaders = array();
+		$aHeaders[] = 'GET '.$sUri.' HTTP/1.1';
+		$aHeaders[] = 'Host: '.$sHostName;
+		$aHeaders[] = 'Accept: */*';
+		$aHeaders[] = 'Connection: Close';
+		$aHeaders[] = 'Accept-Language: en-US,en;q=0.8,ru;q=0.6';
+		$aHeaders[] = 'User-Agent: Mozilla/5.0 (Windows NT 6.2; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/28.0.1500.95 Safari/537.36';
+		$aHeaders[] = '';
+
+		$sErrno = 0;
+		$sErrstr = '';
+		$sResponse = '';
+		
+		$rRemote = @\fsockopen($sHostName, $iPort, $sErrno, $sErrstr, 10);
+		if (false !== @\fwrite($rRemote, \implode("\r\n", $aHeaders)."\r\n"))
+		{
+			while (!@\feof($rRemote))
+			{
+				$sResponse .= @\fread($rRemote, 1024 * 8);
+			}
+
+			@\fclose($rRemote);
+		}
+
+		$mResult = false;
+		if (!empty($sResponse) && \is_string($sResponse))
+		{
+			$aParts = \explode("\r\n\r\n", $sResponse, 2);
+			if (\is_array($aParts) && 2 === \count($aParts) && !empty($aParts[0]))
+			{
+				$iCode = 0;
+				$aMatch = array();
+				if (\preg_match('/HTTP\/1\.[01] ([\d]+)/', $aParts[0], $aMatch) && isset($aMatch[1]))
+				{
+					$iCode = (int) $aMatch[1];
+				}
+
+				$aParts[] = $iCode;
+				$mResult = $aParts;
+			}
+		}
+
+		return  $mResult;
+	}
+
+	/**
+	 * @param string $sUrl
+	 * @param resource $rFile
+	 * @param string $sContentType = ''
+	 * @param int $iCode = 0
+	 * @param \MailSo\Log\Logger $oLogger = null
+	 *
+	 * @return bool
+	 */
+	public function SaveUrlToFile($sUrl, $rFile, &$sContentType = '', &$iCode = 0, $oLogger = null)
+	{
+		if (!is_resource($rFile))
+		{
+			if ($oLogger)
+			{
+				$oLogger->Write('cURL: input resource invalid.', \MailSo\Log\Enumerations\Type::WARNING);
+			}
+			
+			return false;
+		}
+
+		$aOptions = array(
+			CURLOPT_URL => $sUrl,
+			CURLOPT_HEADER => false,
+			CURLOPT_FAILONERROR => true,
+			CURLOPT_SSL_VERIFYPEER => false,
+			CURLOPT_RETURNTRANSFER => true,
+			CURLOPT_FILE => $rFile,
+			CURLOPT_TIMEOUT => 10
+		);
+
+		$oCurl = \curl_init();
+		\curl_setopt_array($oCurl, $aOptions);
+
+		if ($oLogger)
+		{
+			$oLogger->Write('cURL: Send request: '.$sUrl);
+		}
+
+		$bResult = \curl_exec($oCurl);
+		
+		$iCode = (int) \curl_getinfo($oCurl, CURLINFO_HTTP_CODE);
+		$sContentType = (string) \curl_getinfo($oCurl, CURLINFO_CONTENT_TYPE);
+		
+		if ($oLogger)
+		{
+			$oLogger->Write('cURL: Request result: '.($bResult ? 'true' : 'false').' (Status: '.$iCode.', ContentType: '.$sContentType.')');
+			if (!$bResult)
+			{
+				$oLogger->Write('cURL: Error: '.\curl_error($oCurl), \MailSo\Log\Enumerations\Type::WARNING);
+			}
+		}
+
+		if (\is_resource($oCurl))
+		{
+			\curl_close($oCurl);
+		}
+		
+		return $bResult;
+	}
+
+	/**
+	 * @param string $sUrl
+	 * @param string $sContentType = ''
+	 * @param int $iCode = 0
+	 * @param \MailSo\Log\Logger $oLogger = null
+	 *
+	 * @return string|bool
+	 */
+	public function GetUrlAsString($sUrl, &$sContentType = '', &$iCode = 0, $oLogger = null)
+	{
+		$rMemFile = \MailSo\Base\ResourceRegistry::CreateMemoryResource();
+		if ($this->SaveUrlToFile($sUrl, $rMemFile, $sContentType, $iCode, $oLogger) && \is_resource($rMemFile))
+		{
+			\rewind($rMemFile);
+			return \stream_get_contents($rMemFile);
+		}
+		
+		return false;
 	}
 
 	/**
@@ -416,9 +537,18 @@ class Http
 	/**
 	 * @return string
 	 */
+	public function GetPath()
+	{
+		$sUrl = \ltrim(\substr($this->GetServer('SCRIPT_NAME', ''), 0, \strrpos($this->GetServer('SCRIPT_NAME', ''), '/')), '/');
+		return '' === $sUrl ? '/' : '/'.$sUrl.'/';
+	}
+
+	/**
+	 * @return string
+	 */
 	public function GetUrl()
 	{
-		return \substr($this->GetServer('SCRIPT_NAME', ''), 0, \strrpos($this->GetServer('SCRIPT_NAME', ''), '/'));
+		return '/'.$this->GetServer('REQUEST_URI', '');
 	}
 
 	/**
@@ -426,49 +556,14 @@ class Http
 	 */
 	public function GetFullUrl()
 	{
-		return $this->GetScheme().'://'.$this->GetHost(true, false).$this->GetUrl();
+		return $this->GetScheme().'://'.$this->GetHost(true, false).$this->GetPath();
 	}
 
 	/**
-	 * @param string $mValue
-	 *
 	 * @return string
 	 */
-	private function clearNullBite($mValue)
+	public function GetFullUrlWithQuery()
 	{
-		return \str_replace('%00', '', $mValue);
-	}
-
-	/**
-	 * @param mixed $mValue
-	 * @param bool $bClearNullBite = false
-	 *
-	 * @return mixed
-	 */
-	private function stripSlashesValue($mValue, $bClearNullBite = false)
-	{
-		if (!$this->bIsMagicQuotesOn)
-		{
-			return $bClearNullBite && \is_string($mValue) ? $this->clearNullBite($mValue) : $mValue;
-		}
-
-		$sType = \gettype($mValue);
-		if ('string' === $sType)
-		{
-			return \stripslashes($bClearNullBite ? $this->clearNullBite($mValue) : $mValue);
-		}
-		else if ('array' === $sType)
-		{
-			$aReturnValue = array();
-			$mValueKeys = \array_keys($mValue);
-			foreach ($mValueKeys as $sKey)
-			{
-				$aReturnValue[$sKey] = $this->stripSlashesValue($mValue[$sKey], $bClearNullBite);
-			}
-
-			return $aReturnValue;
-		}
-
-		return $mValue;
+		return $this->GetScheme().'://'.$this->GetHost(true, false).$this->GetUrl();
 	}
 }

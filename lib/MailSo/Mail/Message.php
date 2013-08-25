@@ -144,9 +144,14 @@ class Message
 	private $aThreads;
 
 	/**
-	 * @var \MailSo\Mail\MessageCollection
+	 * @var int
 	 */
-	private $oThreadsColleaction;
+	private $iParentThread;
+
+	/**
+	 * @var int
+	 */
+	private $iThreadsLen;
 
 	/**
 	 * @access private
@@ -194,7 +199,8 @@ class Message
 		$this->sReadingConfirmation = '';
 
 		$this->aThreads = array();
-		$this->oThreadsColleaction = null;
+		$this->iThreadsLen = 0;
+		$this->iParentThread = 0;
 
 		return $this;
 	}
@@ -356,6 +362,14 @@ class Message
 	/**
 	 * @return \MailSo\Mime\EmailCollection
 	 */
+	public function ReplyTo()
+	{
+		return $this->oReplyTo;
+	}
+
+	/**
+	 * @return \MailSo\Mime\EmailCollection
+	 */
 	public function To()
 	{
 		return $this->oTo;
@@ -406,7 +420,7 @@ class Message
 	 */
 	public function ReadingConfirmation()
 	{
-		return $this->ReadingConfirmation;
+		return $this->sReadingConfirmation;
 	}
 
 	/**
@@ -424,30 +438,45 @@ class Message
 	{
 		return $this->aThreads;
 	}
-
+	
 	/**
 	 * @param array $aThreads
 	 */
 	public function SetThreads($aThreads)
 	{
-		$this->aThreads = is_array($aThreads) ? $aThreads : array();
+		$this->aThreads = \is_array($aThreads) ? $aThreads : array();
 	}
 
 	/**
-	 * @return array
+	 * @return int
 	 */
-	public function ThreadsColleaction()
+	public function ThreadsLen()
 	{
-		return $this->oThreadsColleaction;
+		return $this->iThreadsLen;
 	}
 
 	/**
-	 * @param \MailSo\Mail\MessageCollection $oThreadsColleaction
+	 * @param int $iThreadsLen
 	 */
-	public function SetThreadsColleaction($oThreadsColleaction)
+	public function SetThreadsLen($iThreadsLen)
 	{
-		$this->oThreadsColleaction =
-			$oThreadsColleaction instanceof \MailSo\Mail\MessageCollection ? $oThreadsColleaction : null;
+		$this->iThreadsLen = $iThreadsLen;
+	}
+
+	/**
+	 * @return int
+	 */
+	public function ParentThread()
+	{
+		return $this->iParentThread;
+	}
+	
+	/**
+	 * @param int $iParentThread
+	 */
+	public function SetParentThread($iParentThread)
+	{
+		$this->iParentThread = $iParentThread;
 	}
 
 	/**
@@ -476,7 +505,7 @@ class Message
 			$oBodyStructure = $oFetchResponse->GetFetchBodyStructure();
 		}
 
-		$oTextPart = $oBodyStructure ? $oBodyStructure->SearchHtmlOrPlainPart() : null;
+		$aTextParts = $oBodyStructure ? $oBodyStructure->SearchHtmlOrPlainParts() : array();
 
 		$sUid = $oFetchResponse->GetFetchValue(\MailSo\Imap\Enumerations\FetchType::UID);
 		$sSize = $oFetchResponse->GetFetchValue(\MailSo\Imap\Enumerations\FetchType::RFC822_SIZE);
@@ -484,38 +513,18 @@ class Message
 		$aFlags = $oFetchResponse->GetFetchValue(\MailSo\Imap\Enumerations\FetchType::FLAGS);
 
 		$this->sFolder = $sFolder;
-		$this->iUid = is_numeric($sUid) ? (int) $sUid : 0;
-		$this->iSize = is_numeric($sSize) ? (int) $sSize : 0;
-		$this->aFlags = is_array($aFlags) ? $aFlags : array();
-		$this->aFlagsLowerCase = array_map('strtolower', $this->aFlags);
+		$this->iUid = \is_numeric($sUid) ? (int) $sUid : 0;
+		$this->iSize = \is_numeric($sSize) ? (int) $sSize : 0;
+		$this->aFlags = \is_array($aFlags) ? $aFlags : array();
+		$this->aFlagsLowerCase = \array_map('strtolower', $this->aFlags);
 
 		$this->iInternalTimeStampInUTC =
 			\MailSo\Base\DateTimeHelper::ParseInternalDateString($sInternalDate);
 
-		$sCharset = '';
-		if ($oTextPart)
-		{
-			$sText = $oFetchResponse->GetFetchValue(\MailSo\Imap\Enumerations\FetchType::BODY.'['.$oTextPart->PartID().']');
-			if (0 < strlen($sText))
-			{
-				$sCharset = $oTextPart->Charset();
-				$sText = \MailSo\Base\Utils::DecodeEncodingValue($sText, $oTextPart->MailEncodingName());
-				$sText = \MailSo\Base\Utils::ConvertEncoding($sText, $sCharset, \MailSo\Base\Enumerations\Charset::UTF_8);
-//				$sText = \MailSo\Base\Utils::Utf8Clear($sText);
-
-				if ('text/html' === $oTextPart->ContentType())
-				{
-					$this->sHtml = $sText;
-				}
-				else
-				{
-					$this->sPlain = $sText;
-				}
-			}
-		}
+		$sCharset = $oBodyStructure ? $oBodyStructure->SearchCharset() : '';
 
 		$sHeaders = $oFetchResponse->GetHeaderFieldsValue();
-		if (0 < strlen($sHeaders))
+		if (0 < \strlen($sHeaders))
 		{
 			$oHeaders = \MailSo\Mime\HeaderCollection::NewInstance()->Parse($sHeaders);
 
@@ -524,27 +533,27 @@ class Message
 				\MailSo\Mime\Enumerations\Parameter::CHARSET
 			);
 
-			if (0 < strlen($sContentTypeCharset))
+			if (0 < \strlen($sContentTypeCharset))
 			{
 				$sCharset = $sContentTypeCharset;
 			}
 
-			if (0 < strlen($sCharset))
+			if (0 < \strlen($sCharset))
 			{
 				$oHeaders->SetParentCharset($sCharset);
 			}
 
-			$this->sSubject = $oHeaders->ValueByName(\MailSo\Mime\Enumerations\Header::SUBJECT);
+			$this->sSubject = $oHeaders->ValueByName(\MailSo\Mime\Enumerations\Header::SUBJECT, true);
 			$this->sMessageId = $oHeaders->ValueByName(\MailSo\Mime\Enumerations\Header::MESSAGE_ID);
 			$this->sContentType = $oHeaders->ValueByName(\MailSo\Mime\Enumerations\Header::CONTENT_TYPE);
 
-			$this->oFrom = $oHeaders->GetAsEmailCollection(\MailSo\Mime\Enumerations\Header::FROM_);
-			$this->oTo = $oHeaders->GetAsEmailCollection(\MailSo\Mime\Enumerations\Header::TO_);
-			$this->oCc = $oHeaders->GetAsEmailCollection(\MailSo\Mime\Enumerations\Header::CC);
-			$this->oBcc = $oHeaders->GetAsEmailCollection(\MailSo\Mime\Enumerations\Header::BCC);
+			$this->oFrom = $oHeaders->GetAsEmailCollection(\MailSo\Mime\Enumerations\Header::FROM_, true);
+			$this->oTo = $oHeaders->GetAsEmailCollection(\MailSo\Mime\Enumerations\Header::TO_, true);
+			$this->oCc = $oHeaders->GetAsEmailCollection(\MailSo\Mime\Enumerations\Header::CC, true);
+			$this->oBcc = $oHeaders->GetAsEmailCollection(\MailSo\Mime\Enumerations\Header::BCC, true);
 
 			$this->oSender = $oHeaders->GetAsEmailCollection(\MailSo\Mime\Enumerations\Header::SENDER);
-			$this->oReplyTo = $oHeaders->GetAsEmailCollection(\MailSo\Mime\Enumerations\Header::REPLY_TO);
+			$this->oReplyTo = $oHeaders->GetAsEmailCollection(\MailSo\Mime\Enumerations\Header::REPLY_TO, true);
 
 			$this->sInReplyTo = $oHeaders->ValueByName(\MailSo\Mime\Enumerations\Header::IN_REPLY_TO);
 			$this->sReferences = $oHeaders->ValueByName(\MailSo\Mime\Enumerations\Header::REFERENCES);
@@ -556,7 +565,7 @@ class Message
 			// Sensitivity
 			$this->iSensitivity = \MailSo\Mime\Enumerations\Sensitivity::NOTHING;
 			$sSensitivity = $oHeaders->ValueByName(\MailSo\Mime\Enumerations\Header::SENSITIVITY);
-			switch (strtolower($sSensitivity))
+			switch (\strtolower($sSensitivity))
 			{
 				case 'personal':
 					$this->iSensitivity = \MailSo\Mime\Enumerations\Sensitivity::PERSONAL;
@@ -572,17 +581,17 @@ class Message
 			// Priority
 			$this->iPriority = \MailSo\Mime\Enumerations\MessagePriority::NORMAL;
 			$sPriority = $oHeaders->ValueByName(\MailSo\Mime\Enumerations\Header::X_MSMAIL_PRIORITY);
-			if (0 === strlen($sPriority))
+			if (0 === \strlen($sPriority))
 			{
 				$sPriority = $oHeaders->ValueByName(\MailSo\Mime\Enumerations\Header::IMPORTANCE);
 			}
-			if (0 === strlen($sPriority))
+			if (0 === \strlen($sPriority))
 			{
 				$sPriority = $oHeaders->ValueByName(\MailSo\Mime\Enumerations\Header::X_PRIORITY);
 			}
-			if (0 < strlen($sPriority))
+			if (0 < \strlen($sPriority))
 			{
-				switch (str_replace(' ', '', strtolower($sPriority)))
+				switch (\str_replace(' ', '', \strtolower($sPriority)))
 				{
 					case 'high':
 					case '1(highest)':
@@ -612,7 +621,7 @@ class Message
 			$this->sReadingConfirmation = \trim($this->sReadingConfirmation);
 
 			$sDraftInfo = $oHeaders->ValueByName(\MailSo\Mime\Enumerations\Header::X_DRAFT_INFO);
-			if (0 < strlen($sDraftInfo))
+			if (0 < \strlen($sDraftInfo))
 			{
 				$sType = '';
 				$sFolder = '';
@@ -621,7 +630,7 @@ class Message
 				\MailSo\Mime\ParameterCollection::NewInstance($sDraftInfo)
 					->ForeachList(function ($oParameter) use (&$sType, &$sFolder, &$sUid) {
 
-						switch (strtolower($oParameter->Name()))
+						switch (\strtolower($oParameter->Name()))
 						{
 							case 'type':
 								$sType = $oParameter->Value();
@@ -630,13 +639,13 @@ class Message
 								$sUid = $oParameter->Value();
 								break;
 							case 'folder':
-								$sFolder = base64_decode($oParameter->Value());
+								$sFolder = \base64_decode($oParameter->Value());
 								break;
 						}
 					})
 				;
 
-				if (0 < strlen($sType) && 0 < strlen($sFolder) && 0 < strlen($sUid))
+				if (0 < \strlen($sType) && 0 < \strlen($sFolder) && 0 < \strlen($sUid))
 				{
 					$this->aDraftInfo = array($sType, $sUid, $sFolder);
 				}
@@ -644,12 +653,12 @@ class Message
 		}
 		else if ($oFetchResponse->GetEnvelope())
 		{
-			if (0 === strlen($sCharset) && $oBodyStructure)
+			if (0 === \strlen($sCharset) && $oBodyStructure)
 			{
 				$sCharset = $oBodyStructure->SearchCharset();
 			}
 
-			if (0 === strlen($sCharset))
+			if (0 === \strlen($sCharset))
 			{
 				$sCharset = \MailSo\Base\Enumerations\Charset::ISO_8859_1;
 			}
@@ -665,6 +674,49 @@ class Message
 			$this->oCc = $oFetchResponse->GetFetchEnvelopeEmailCollection(6, $sCharset);
 			$this->oBcc = $oFetchResponse->GetFetchEnvelopeEmailCollection(7, $sCharset);
 			$this->sInReplyTo = $oFetchResponse->GetFetchEnvelopeValue(8, '');
+		}
+
+		if (\is_array($aTextParts) && 0 < \count($aTextParts))
+		{
+			$sHtmlParts = array();
+			$sPlainParts = array();
+
+			foreach ($aTextParts as $oPart)
+			{
+				$sText = $oFetchResponse->GetFetchValue(\MailSo\Imap\Enumerations\FetchType::BODY.'['.$oPart->PartID().']');
+
+				if (\is_string($sText) && 0 < \strlen($sText))
+				{
+					$sTextCharset = $oPart->Charset();
+					if (empty($sTextCharset))
+					{
+						$sTextCharset = $sCharset;
+					}
+
+					$sText = \MailSo\Base\Utils::DecodeEncodingValue($sText, $oPart->MailEncodingName());
+					$sText = \MailSo\Base\Utils::ConvertEncoding($sText, $sTextCharset, \MailSo\Base\Enumerations\Charset::UTF_8);
+
+					if ('text/html' === $oPart->ContentType())
+					{
+						$sHtmlParts[] = $sText;
+					}
+					else
+					{
+						$sPlainParts[] = $sText;
+					}
+				}
+			}
+
+			if (0 < \count($sHtmlParts))
+			{
+				$this->sHtml = implode('<br />', $sHtmlParts);
+			}
+			else
+			{
+				$this->sPlain = implode("\n", $sPlainParts);
+			}
+
+			unset($sHtmlParts, $sPlainParts);
 		}
 
 		if ($oBodyStructure)

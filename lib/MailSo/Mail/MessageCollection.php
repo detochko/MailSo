@@ -59,6 +59,11 @@ class MessageCollection extends \MailSo\Base\Collection
 	public $NewMessages;
 
 	/**
+	 * @var array
+	 */
+	public $LastCollapsedThreadUids;
+
+	/**
 	 * @access protected
 	 */
 	protected function __construct()
@@ -95,6 +100,8 @@ class MessageCollection extends \MailSo\Base\Collection
 		$this->Search = '';
 		$this->UidNext = '';
 		$this->NewMessages = array();
+		
+		$this->LastCollapsedThreadUids = array();
 
 		return $this;
 	}

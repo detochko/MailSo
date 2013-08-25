@@ -105,7 +105,7 @@ abstract class Collection
 		{
 			foreach ($this->aItems as $oItem)
 			{
-				\call_user_func($mCallback, $oItem);
+				$aResult[] = \call_user_func($mCallback, $oItem);
 			}
 		}
 
@@ -135,20 +135,17 @@ abstract class Collection
 
 	/**
 	 * @param mixed $mCallback
-	 * @return array
+	 * @return void
 	 */
 	public function ForeachList($mCallback)
 	{
-		$aResult = array();
 		if (\is_callable($mCallback))
 		{
 			foreach ($this->aItems as $oItem)
 			{
-				$aResult[] = \call_user_func($mCallback, $oItem);
+				\call_user_func($mCallback, $oItem);
 			}
 		}
-
-		return $aResult;
 	}
 
 	/**

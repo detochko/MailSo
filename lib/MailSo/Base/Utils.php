@@ -713,6 +713,69 @@ class Utils
 	}
 
 	/**
+	 * @param string $sContentType
+	 * @param string $sFileName
+	 *
+	 * @return string
+	 */
+	public static function ContentTypeType($sContentType, $sFileName)
+	{
+		$sResult = '';
+		$sContentType = \strtolower($sContentType);
+		if (0 === strpos($sContentType, 'image/'))
+		{
+			$sResult = 'image';
+		}
+		else
+		{
+			switch ($sContentType)
+			{
+				case 'application/zip':
+				case 'application/x-7z-compressed':
+				case 'application/x-rar-compressed':
+				case 'application/x-msdownload':
+				case 'application/vnd.ms-cab-compressed':
+				case 'application/x-gzip':
+				case 'application/x-bzip':
+				case 'application/x-bzip2':
+				case 'application/x-debian-package':
+					$sResult = 'archive';
+					break;
+				case 'application/msword':
+				case 'application/rtf':
+				case 'application/vnd.ms-excel':
+				case 'application/vnd.ms-powerpoint':
+				case 'application/vnd.openxmlformats-officedocument.wordprocessingml.document':
+				case 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet':
+				case 'application/vnd.openxmlformats-officedocument.wordprocessingml.template':
+				case 'application/vnd.openxmlformats-officedocument.presentationml.presentation':
+				case 'application/vnd.oasis.opendocument.text':
+				case 'application/vnd.oasis.opendocument.spreadsheet':
+					$sResult = 'doc';
+					break;
+				case 'application/pdf':
+				case 'application/x-pdf':
+					$sResult = 'pdf';
+					break;
+			}
+
+			if ('' === $sResult)
+			{
+				switch (\strtolower(\MailSo\Base\Utils::GetFileExtension($sFileName)))
+				{
+					case 'zip':
+					case '7z':
+					case 'rar':
+						$sResult = 'archive';
+						break;
+				}
+			}
+		}
+
+		return $sResult;
+	}
+
+	/**
 	 * @staticvar bool $bValidateAction
 	 *
 	 * @param int &$iTimer
@@ -1027,7 +1090,7 @@ class Utils
 	 */
 	public static function Utf8Clear($sUtfString, $sReplaceOn = '')
 	{
-//		$sUtfString = @\iconv('UTF-8', 'UTF-8//IGNORE', $sUtfString);
+		$sUtfString = @\iconv('UTF-8', 'UTF-8//IGNORE', $sUtfString);
 
 		$sUtfString = \preg_replace(
 			'/[\x00-\x08\x10\x0B\x0C\x0E-\x1F\x7F]'.
@@ -1039,7 +1102,10 @@ class Utils
 
 		$sUtfString = \preg_replace(
 			'/\xE0[\x80-\x9F][\x80-\xBF]'.
+			'|\xEF\xBF\xBF'.
 			'|\xED[\xA0-\xBF][\x80-\xBF]/S', $sReplaceOn, $sUtfString);
+
+		$sUtfString = \preg_replace('/\xEF\xBF\xBD/', '?', $sUtfString);
 
 		return $sUtfString;
 	}
@@ -1155,10 +1221,11 @@ class Utils
 	 * @param int $iBufferLen = 8192
 	 * @param bool $bResetTimeLimit = true
 	 * @param bool $bFixCrLf = false
+	 * @param bool $bRewindOnComplete = false
 	 *
 	 * @return int|bool
 	 */
-	public static function MultipleStreamWriter($rRead, $aWrite, $iBufferLen = 8192, $bResetTimeLimit = true, $bFixCrLf = false)
+	public static function MultipleStreamWriter($rRead, $aWrite, $iBufferLen = 8192, $bResetTimeLimit = true, $bFixCrLf = false, $bRewindOnComplete = false)
 	{
 		$iTimer = 0;
 		$mResult = false;
@@ -1199,6 +1266,17 @@ class Utils
 				if ($bResetTimeLimit)
 				{
 					\MailSo\Base\Utils::ResetTimeLimit($iTimer);
+				}
+			}
+		}
+
+		if ($mResult && $bRewindOnComplete)
+		{
+			foreach ($aWrite as $rWriteStream)
+			{
+				if (\is_resource($rWriteStream))
+				{
+					@\rewind($rWriteStream);
 				}
 			}
 		}
@@ -1606,18 +1684,49 @@ class Utils
 
 			if (false === $mResult && \MailSo\Base\Utils::IsIconvSupported())
 			{
-				foreach (array('utf-8', 'iso-8859-1', 'windows-1251') as $sCharsetItem)
-				{
-					$sSample = @\iconv($sCharsetItem, $sCharsetItem.'//IGNORE', $sStr);
-					if (\md5($sSample) === \md5($sStr))
-					{
-						$mResult = $sCharsetItem;
-						break;
-					}
-				}
+				$mResult = \md5(@\iconv('utf-8', 'utf-8//IGNORE', $sStr)) === \md5($sStr) ? 'utf-8' : '';
 			}
 		}
 		
-		return !empty($mResult) && \is_string($mResult) ? $mResult : '';
+		return \is_string($mResult) && 0 < \strlen($mResult) ? $mResult : '';
+	}
+
+	/**
+     * @param string $sData
+     * @param string $sKey
+	 * 
+     * @return string
+     */
+    public static function Hmac($sData, $sKey)
+    {
+        if (\function_exists('hash_hmac'))
+		{
+            return \hash_hmac('md5', $sData, $sKey);
+        }
+
+        $iLen = 64;
+        if ($iLen < \strlen($sKey))
+		{
+            $sKey = \pack('H*', \md5($sKey));
+        }
+		
+        $sKey = \str_pad($sKey, $iLen, \chr(0x00));
+        $sIpad = \str_pad('', $iLen, \chr(0x36));
+        $sOpad = \str_pad('', $iLen, \chr(0x5c));
+		
+        return \md5(($sKey ^ $sOpad).\pack('H*', \md5(($sKey ^ $sIpad).$sData)));
+    }
+
+	/**
+	 * @param string $sDomain
+	 *
+	 * @return bool
+	 */
+	public static function ValidateDomain($sDomain)
+	{
+		$aMatch = array();
+		return \preg_match('/.+(\.[a-zA-Z]+)$/', $sDomain, $aMatch) && !empty($aMatch[1]) && \in_array($aMatch[1], \explode(' ',
+			'.aero .asia .biz .cat .com .coop .edu .gov .info .int .jobs .mil .mobi .museum .name .net .org .pro .tel .travel .xxx .ac .ad .ae .af .ag .ai .al .am .an .ao .aq .ar .as .at .au .aw .ax .az .ba .bb .bd .be .bf .bg .bh .bi .bj .bm .bn .bo .br .bs .bt .bv .bw .by .bz .ca .cc .cd .cf .cg .ch .ci .ck .cl .cm .cn .co .cr .cs .cu .cv .cx .cy .cz .dd .de .dj .dk .dm .do .dz .ec .ee .eg .er .es .et .eu .fi .fj .fk .fm .fo .fr .ga .gb .gd .ge .gf .gg .gh .gi .gl .gm .gn .gp .gq .gr .gs .gt .gu .gw .gy .hk .hm .hn .hr .ht .hu .id .ie .il .im .in .io .iq .ir .is .it .je .jm .jo .jp .ke .kg .kh .ki .km .kn .kp .kr .kw .ky .kz .la .lb .lc .li .lk .lr .ls .lt .lu .lv .ly .ma .mc .md .me .mg .mh .mk .ml .mm .mn .mo .mp .mq .mr .ms .mt .mu .mv .mw .mx .my .mz .na .nc .ne .nf .ng .ni .nl .no .np .nr .nu .nz .om .pa .pe .pf .pg .ph .pk .pl .pm .pn .pr .ps .pt .pw .py .qa .re .ro .rs .ru . .rw .sa .sb .sc .sd .se .sg .sh .si .sj .sk .sl .sm .sn .so .sr .st .su .sv .sy .sz .tc .td .tf .tg .th .tj .tk .tl .tm .tn .to .tp .tr .tt .tv .tw .tz .ua .ug .uk .us .uy .uz .va .vc .ve .vg .vi .vn .vu .wf .ws .ye .yt .za .zm .zw'
+		));
 	}
 }

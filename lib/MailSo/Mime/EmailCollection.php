@@ -164,6 +164,10 @@ class EmailCollection extends \MailSo\Base\Collection
 					if (!$bIsInAngleBrackets)
 					{
 						$bIsInAngleBrackets = true;
+						if ($bIsInQuotes)
+						{
+							$bIsInQuotes = false;
+						}
 					}
 					break;
 

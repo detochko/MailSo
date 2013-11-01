@@ -34,6 +34,11 @@ class Message
 	private $sCustomXMailer;
 
 	/**
+	 * @var bool
+	 */
+	private $bNeedRewind;
+
+	/**
 	 * @access private
 	 */
 	private function __construct()
@@ -44,6 +49,7 @@ class Message
 		$this->sMessageId = '';
 		$this->sCustomXMailer = '';
 		$this->bAddEmptyTextPart = true;
+		$this->bNeedRewind = false;
 	}
 
 	/**
@@ -242,7 +248,7 @@ class Message
 	 *
 	 * @return \MailSo\Mime\Message
 	 */
-	public function SetSensivity($iValue)
+	public function SetSensitivity($iValue)
 	{
 		$sResult = '';
 		switch ($iValue)
@@ -404,14 +410,15 @@ class Message
 
 	/**
 	 * @param string $sContentType
-	 * @param string | resource $mData
+	 * @param string|resource $mData
 	 * @param string $sContentTransferEncoding = ''
+	 * @param array $aCustomContentTypeParams = array()
 	 *
 	 * @return \MailSo\Mime\Message
 	 */
-	public function AddAlternative($sContentType, $mData, $sContentTransferEncoding = '')
+	public function AddAlternative($sContentType, $mData, $sContentTransferEncoding = '', $aCustomContentTypeParams = array())
 	{
-		$this->aAlternativeParts[] = array($sContentType, $mData, $sContentTransferEncoding);
+		$this->aAlternativeParts[] = array($sContentType, $mData, $sContentTransferEncoding, $aCustomContentTypeParams);
 
 		return $this;
 	}
@@ -421,7 +428,7 @@ class Message
 	 */
 	private function generateNewBoundary()
 	{
-		return '----=_Part_'.mt_rand(100, 999).'_'.mt_rand(100000000, 999999999).'.'.time();
+		return '----=_Part_'.rand(100, 999).'_'.rand(100000000, 999999999).'.'.time();
 	}
 
 	/**
@@ -436,7 +443,7 @@ class Message
 			$sHostName = isset($_SERVER['SERVER_NAME']) ? $_SERVER['SERVER_NAME'] : 'mailso';
 		}
 
-		return '<'.md5(mt_rand(100000, 999999).time().$sHostName).'@'.$sHostName.'>';
+		return '<'.md5(rand(100000, 999999).time().$sHostName).'@'.$sHostName.'>';
 	}
 
 	/**
@@ -450,6 +457,7 @@ class Message
 
 		$sFileName = $oAttachment->FileName();
 		$sCID = $oAttachment->CID();
+		$sContentLocation = $oAttachment->ContentLocation();
 
 		$oContentTypeParameters = null;
 		$oContentDispositionParameters = null;
@@ -483,6 +491,13 @@ class Message
 		{
 			$oAttachmentPart->Headers->Add(
 				Header::NewInstance(\MailSo\Mime\Enumerations\Header::CONTENT_ID, $sCID)
+			);
+		}
+		
+		if (0 < strlen($sContentLocation))
+		{
+			$oAttachmentPart->Headers->Add(
+				Header::NewInstance(\MailSo\Mime\Enumerations\Header::CONTENT_LOCATION, $sContentLocation)
 			);
 		}
 
@@ -521,16 +536,24 @@ class Message
 		if (is_array($aAlternativeData) && isset($aAlternativeData[0]))
 		{
 			$oAlternativePart = Part::NewInstance();
+			$oParameters = ParameterCollection::NewInstance();
+			$oParameters->Add(
+				Parameter::NewInstance(
+					\MailSo\Mime\Enumerations\Parameter::CHARSET,
+					\MailSo\Base\Enumerations\Charset::UTF_8)
+			);
+
+			if (isset($aAlternativeData[3]) && \is_array($aAlternativeData[3]) && 0 < \count($aAlternativeData[3]))
+			{
+				foreach ($aAlternativeData[3] as $sName => $sValue)
+				{
+					$oParameters->Add(Parameter::NewInstance($sName, $sValue));
+				}
+			}
 
 			$oAlternativePart->Headers->Add(
 				Header::NewInstance(\MailSo\Mime\Enumerations\Header::CONTENT_TYPE,
-					$aAlternativeData[0].'; '.
-					ParameterCollection::NewInstance()->Add(
-						Parameter::NewInstance(
-							\MailSo\Mime\Enumerations\Parameter::CHARSET,
-							\MailSo\Base\Enumerations\Charset::UTF_8)
-					)->ToString()
-				)
+					$aAlternativeData[0].'; '.$oParameters->ToString())
 			);
 
 			$oAlternativePart->Body = null;
@@ -630,12 +653,13 @@ class Message
 			else
 			{
 				$aAttachments = $this->oAttachmentCollection->CloneAsArray();
-				if (1 === count($aAttachments) && isset($aAttachments[0]))
+				if (\is_array($aAttachments) && 1 === count($aAttachments) && isset($aAttachments[0]))
 				{
 					$this->oAttachmentCollection->Clear();
 
 					$oResultPart = $this->createNewMessageAlternativePartBody(array(
-						$aAttachments[0]->ContentType(), $aAttachments[0]->Resource()
+						$aAttachments[0]->ContentType(), $aAttachments[0]->Resource(),
+							'', $aAttachments[0]->CustomContentTypeParams()
 					));
 				}
 			}
@@ -763,15 +787,21 @@ class Message
 
 	/**
 	 * @param bool $bWithoutBcc = false
+	 * @param bool $bRewind = false
 	 *
 	 * @return \MailSo\Mime\Part
 	 */
-	public function ToPart($bWithoutBcc = false)
+	public function ToPart($bWithoutBcc = false, $bRewind = false)
 	{
 		$oPart = $this->createNewMessageSimpleOrAlternativeBody();
 		$oPart = $this->createNewMessageRelatedBody($oPart);
 		$oPart = $this->createNewMessageMixedBody($oPart);
 		$oPart = $this->setDefaultHeaders($oPart, $bWithoutBcc);
+
+		if ($bRewind)
+		{
+			$oPart->Rewind();
+		}
 
 		return $oPart;
 	}
@@ -783,7 +813,10 @@ class Message
 	 */
 	public function ToStream($bWithoutBcc = false)
 	{
-		return $this->ToPart($bWithoutBcc)->ToStream();
+		$bNeedRewind = $this->bNeedRewind;
+		
+		$this->bNeedRewind = true;
+		return $this->ToPart($bWithoutBcc, $bNeedRewind)->ToStream();
 	}
 
 	/**

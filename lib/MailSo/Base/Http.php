@@ -214,7 +214,7 @@ class Http
 	public function CheckLocalhost($sServer)
 	{
 		return \in_array(\strtolower(\trim($sServer)), array(
-			'127.0.0.1', 'localhost', '::1'
+			'localhost', '127.0.0.1', '::1', '::1/128', '0:0:0:0:0:0:0:1'
 		));
 	}
 
@@ -336,67 +336,75 @@ class Http
 
 		return $sIp;
 	}
-	
-	/**
-	 * @return string
-	 */
-	public function SendGetRequest($sHostName, $iPort = 80, $sUri = '/')
-	{
-		$aHeaders = array();
-		$aHeaders[] = 'GET '.$sUri.' HTTP/1.1';
-		$aHeaders[] = 'Host: '.$sHostName;
-		$aHeaders[] = 'Accept: */*';
-		$aHeaders[] = 'Connection: Close';
-		$aHeaders[] = 'Accept-Language: en-US,en;q=0.8,ru;q=0.6';
-		$aHeaders[] = 'User-Agent: Mozilla/5.0 (Windows NT 6.2; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/28.0.1500.95 Safari/537.36';
-		$aHeaders[] = '';
-
-		$sErrno = 0;
-		$sErrstr = '';
-		$sResponse = '';
-		
-		$rRemote = @\fsockopen($sHostName, $iPort, $sErrno, $sErrstr, 10);
-		if (false !== @\fwrite($rRemote, \implode("\r\n", $aHeaders)."\r\n"))
-		{
-			while (!@\feof($rRemote))
-			{
-				$sResponse .= @\fread($rRemote, 1024 * 8);
-			}
-
-			@\fclose($rRemote);
-		}
-
-		$mResult = false;
-		if (!empty($sResponse) && \is_string($sResponse))
-		{
-			$aParts = \explode("\r\n\r\n", $sResponse, 2);
-			if (\is_array($aParts) && 2 === \count($aParts) && !empty($aParts[0]))
-			{
-				$iCode = 0;
-				$aMatch = array();
-				if (\preg_match('/HTTP\/1\.[01] ([\d]+)/', $aParts[0], $aMatch) && isset($aMatch[1]))
-				{
-					$iCode = (int) $aMatch[1];
-				}
-
-				$aParts[] = $iCode;
-				$mResult = $aParts;
-			}
-		}
-
-		return  $mResult;
-	}
 
 	/**
 	 * @param string $sUrl
+	 * @param array $aPost = array()
+	 * @param string $sCustomUserAgent = 'MaiSo Http User Agent (v1)'
+	 * @param int $iCode = 0
+	 * @param \MailSo\Log\Logger $oLogger = null
+	 *
+	 * @return string|bool
+	 */
+	public function SendPostRequest($sUrl, $aPost = array(), $sCustomUserAgent = 'MaiSo Http User Agent (v1)', &$iCode = 0, $oLogger = null)
+	{
+		$aOptions = array(
+			CURLOPT_URL => $sUrl,
+			CURLOPT_HEADER => false,
+			CURLOPT_FAILONERROR => true,
+			CURLOPT_SSL_VERIFYPEER => false,
+			CURLOPT_RETURNTRANSFER => true,
+			CURLOPT_POST => true,
+			CURLOPT_POSTFIELDS => $aPost,
+			CURLOPT_TIMEOUT => 20
+		);
+
+		if (0 < \strlen($sCustomUserAgent))
+		{
+			$aOptions[CURLOPT_USERAGENT] = $sCustomUserAgent;
+		}
+
+		$oCurl = \curl_init();
+		\curl_setopt_array($oCurl, $aOptions);
+
+		if ($oLogger)
+		{
+			$oLogger->Write('cURL: Send post request: '.$sUrl);
+		}
+
+		$mResult = \curl_exec($oCurl);
+
+		$iCode = (int) \curl_getinfo($oCurl, CURLINFO_HTTP_CODE);
+		$sContentType = (string) \curl_getinfo($oCurl, CURLINFO_CONTENT_TYPE);
+
+		if ($oLogger)
+		{
+			$oLogger->Write('cURL: Post request result: (Status: '.$iCode.', ContentType: '.$sContentType.')');
+			if (false === $mResult || 200 !== $iCode)
+			{
+				$oLogger->Write('cURL: Error: '.\curl_error($oCurl), \MailSo\Log\Enumerations\Type::WARNING);
+			}
+		}
+
+		if (\is_resource($oCurl))
+		{
+			\curl_close($oCurl);
+		}
+
+		return $mResult;
+	}
+	
+	/**
+	 * @param string $sUrl
 	 * @param resource $rFile
+	 * @param string $sCustomUserAgent = 'MaiSo Http User Agent (v1)'
 	 * @param string $sContentType = ''
 	 * @param int $iCode = 0
 	 * @param \MailSo\Log\Logger $oLogger = null
 	 *
 	 * @return bool
 	 */
-	public function SaveUrlToFile($sUrl, $rFile, &$sContentType = '', &$iCode = 0, $oLogger = null)
+	public function SaveUrlToFile($sUrl, $rFile, $sCustomUserAgent = 'MaiSo Http User Agent (v1)', &$sContentType = '', &$iCode = 0, $oLogger = null)
 	{
 		if (!is_resource($rFile))
 		{
@@ -418,6 +426,11 @@ class Http
 			CURLOPT_TIMEOUT => 10
 		);
 
+		if (0 < \strlen($sCustomUserAgent))
+		{
+			$aOptions[CURLOPT_USERAGENT] = $sCustomUserAgent;
+		}
+
 		$oCurl = \curl_init();
 		\curl_setopt_array($oCurl, $aOptions);
 
@@ -434,7 +447,7 @@ class Http
 		if ($oLogger)
 		{
 			$oLogger->Write('cURL: Request result: '.($bResult ? 'true' : 'false').' (Status: '.$iCode.', ContentType: '.$sContentType.')');
-			if (!$bResult)
+			if (!$bResult || 200 !== $iCode)
 			{
 				$oLogger->Write('cURL: Error: '.\curl_error($oCurl), \MailSo\Log\Enumerations\Type::WARNING);
 			}
@@ -450,16 +463,17 @@ class Http
 
 	/**
 	 * @param string $sUrl
+	 * @param string $sCustomUserAgent = 'MaiSo Http User Agent (v1)'
 	 * @param string $sContentType = ''
 	 * @param int $iCode = 0
 	 * @param \MailSo\Log\Logger $oLogger = null
 	 *
 	 * @return string|bool
 	 */
-	public function GetUrlAsString($sUrl, &$sContentType = '', &$iCode = 0, $oLogger = null)
+	public function GetUrlAsString($sUrl, $sCustomUserAgent = 'MaiSo Http User Agent (v1)', &$sContentType = '', &$iCode = 0, $oLogger = null)
 	{
 		$rMemFile = \MailSo\Base\ResourceRegistry::CreateMemoryResource();
-		if ($this->SaveUrlToFile($sUrl, $rMemFile, $sContentType, $iCode, $oLogger) && \is_resource($rMemFile))
+		if ($this->SaveUrlToFile($sUrl, $rMemFile, $sCustomUserAgent, $sContentType, $iCode, $oLogger) && \is_resource($rMemFile))
 		{
 			\rewind($rMemFile);
 			return \stream_get_contents($rMemFile);

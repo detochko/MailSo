@@ -140,11 +140,51 @@ class Attachment
 	}
 
 	/**
+	 * @return string
+	 */
+	public function ContentLocation()
+	{
+		return $this->oBodyStructure ? $this->oBodyStructure->ContentLocation() : '';
+	}
+
+	/**
 	 * @return bool
 	 */
 	public function IsInline()
 	{
 		return $this->oBodyStructure ? $this->oBodyStructure->IsInline() : false;
+	}
+
+	/**
+	 * @return bool
+	 */
+	public function IsImage()
+	{
+		return $this->oBodyStructure ? $this->oBodyStructure->IsImage() : false;
+	}
+
+	/**
+	 * @return bool
+	 */
+	public function IsArchive()
+	{
+		return $this->oBodyStructure ? $this->oBodyStructure->IsArchive() : false;
+	}
+
+	/**
+	 * @return bool
+	 */
+	public function IsPdf()
+	{
+		return $this->oBodyStructure ? $this->oBodyStructure->IsPdf() : false;
+	}
+
+	/**
+	 * @return bool
+	 */
+	public function IsDoc()
+	{
+		return $this->oBodyStructure ? $this->oBodyStructure->IsDoc() : false;
 	}
 
 	/**

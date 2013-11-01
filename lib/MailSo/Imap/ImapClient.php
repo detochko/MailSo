@@ -129,7 +129,7 @@ class ImapClient extends \MailSo\Net\NetClient
 	public function Connect($sServerName, $iPort = 143,
 		$iSecurityType = \MailSo\Net\Enumerations\ConnectionSecurityType::AUTO_DETECT)
 	{
-		$this->aTagTimeouts['*'] = microtime(true);
+		$this->aTagTimeouts['*'] = \microtime(true);
 
 		parent::Connect($sServerName, $iPort, $iSecurityType);
 
@@ -139,7 +139,7 @@ class ImapClient extends \MailSo\Net\NetClient
 			$this->IsSupported('STARTTLS'), $this->iSecurityType))
 		{
 			$this->SendRequestWithCheck('STARTTLS');
-			if (!@stream_socket_enable_crypto($this->rConnect, true, STREAM_CRYPTO_METHOD_TLS_CLIENT))
+			if (!@\stream_socket_enable_crypto($this->rConnect, true, STREAM_CRYPTO_METHOD_TLS_CLIENT))
 			{
 				$this->writeLogException(
 					new \MailSo\Imap\Exceptions\RuntimeException('Cannot enable STARTTLS'),
@@ -161,6 +161,8 @@ class ImapClient extends \MailSo\Net\NetClient
 	/**
 	 * @param string $sLogin
 	 * @param string $sPassword
+	 * @param string $sProxyAuthUser = ''
+	 * @param bool $bUseAuthPlainIfSupported = false
 	 *
 	 * @return \MailSo\Imap\ImapClient
 	 *
@@ -168,7 +170,7 @@ class ImapClient extends \MailSo\Net\NetClient
 	 * @throws \MailSo\Net\Exceptions\Exception
 	 * @throws \MailSo\Imap\Exceptions\Exception
 	 */
-	public function Login($sLogin, $sPassword)
+	public function Login($sLogin, $sPassword, $sProxyAuthUser = '', $bUseAuthPlainIfSupported = false)
 	{
 		if (!\MailSo\Base\Validator::NotEmptyString($sLogin, true) ||
 			!\MailSo\Base\Validator::NotEmptyString($sPassword, true))
@@ -178,18 +180,48 @@ class ImapClient extends \MailSo\Net\NetClient
 				\MailSo\Log\Enumerations\Type::ERROR, true);
 		}
 
-		$sLogin = trim($sLogin);
+		$sLogin = \trim($sLogin);
 		$sPassword = $sPassword;
 
 		$this->sLogginedUser = $sLogin;
 
 		try
 		{
-			$this->SendRequestWithCheck('LOGIN',
-				array(
-					$this->EscapeString($sLogin),
-					$this->EscapeString($sPassword)
-				));
+			if ($bUseAuthPlainIfSupported && $this->IsSupported('AUTH=PLAIN'))
+			{
+				if ($this->oLogger)
+				{
+					$this->oLogger->AddSecret(\base64_encode("\0".$sLogin."\0".$sPassword));
+				}
+
+				$this->SendRequestWithCheck('AUTHENTICATE',
+					array('PLAIN', \base64_encode("\0".$sLogin."\0".$sPassword)));
+			}
+			else
+			{
+				if ($this->oLogger)
+				{
+					$this->oLogger->AddSecret($this->EscapeString($sLogin));
+					$this->oLogger->AddSecret($this->EscapeString($sPassword));
+				}
+
+				$this->SendRequestWithCheck('LOGIN',
+					array(
+						$this->EscapeString($sLogin),
+						$this->EscapeString($sPassword)
+					));
+			}
+//			else
+//			{
+//				$this->writeLogException(
+//					new \MailSo\Imap\Exceptions\LoginBadMethodException(),
+//					\MailSo\Log\Enumerations\Type::NOTICE, true);
+//			}
+
+			if (0 < \strlen($sProxyAuthUser))
+			{
+				$this->SendRequestWithCheck('PROXYAUTH', array($this->EscapeString($sProxyAuthUser)));
+			}
 		}
 		catch (\MailSo\Imap\Exceptions\NegativeResponseException $oException)
 		{

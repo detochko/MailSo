@@ -26,7 +26,7 @@ class MessageCollection extends \MailSo\Base\Collection
 	/**
 	 * @var int
 	 */
-	public $MessageSearchCount;
+	public $MessageResultCount;
 
 	/**
 	 * @var string
@@ -92,7 +92,7 @@ class MessageCollection extends \MailSo\Base\Collection
 
 		$this->MessageCount = 0;
 		$this->MessageUnseenCount = 0;
-		$this->MessageSearchCount = 0;
+		$this->MessageResultCount = 0;
 
 		$this->FolderName = '';
 		$this->Offset = 0;

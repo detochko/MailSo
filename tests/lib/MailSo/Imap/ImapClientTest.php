@@ -77,9 +77,9 @@ class ImapClientTest extends \PHPUnit_Framework_TestCase
 		$this->assertTrue(in_array('\inbox', $aResult[5]->FlagsLowerCase()));
 
 		$this->assertTrue($aResult[8] instanceof \MailSo\Imap\Folder);
-		$this->assertEquals('', $aResult[8]->Delimiter());
+		$this->assertEquals('.', $aResult[8]->Delimiter());
 
 		$this->assertTrue($aResult[9] instanceof \MailSo\Imap\Folder);
-		$this->assertEquals('', $aResult[8]->Delimiter());
+		$this->assertEquals('.', $aResult[8]->Delimiter());
 	}
 }

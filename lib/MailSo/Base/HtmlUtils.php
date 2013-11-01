@@ -28,29 +28,34 @@ class HtmlUtils
 			$bOnce = false;
 			if (\MailSo\Base\Utils::FunctionExistsAndEnabled('libxml_use_internal_errors'))
 			{
-				@libxml_use_internal_errors(true);
+				@\libxml_use_internal_errors(true);
 			}
 		}
 
 		$oDom = new \DOMDocument('1.0', 'utf-8');
+		$oDom->encoding = 'UTF-8';
 
-		@$oDom->loadHTML('<'.'?xml version="1.0" encoding="utf-8"?'.'>'.
-			'<html><head><meta http-equiv="Content-Type" content="text/html; charset=utf-8"></head><body>'.$sText.'</body></html>');
+		@$oDom->loadHTML(
+			'<'.'?xml version="1.0" encoding="utf-8"?'.'>'.
+			'<html><head><meta http-equiv="Content-Type" content="text/html; charset=utf-8"></head><body>'.$sText.'</body></html>'
+		);
 
 		return $oDom;
 	}
 
 	/**
 	 * @param string $sHtml
+	 * @param bool $bSetupBody = false
 	 *
 	 * @return string
 	 */
-	public static function ClearBodyAndHtmlTag($sHtml)
+	public static function ClearBodyAndHtmlTag($sHtml, $bSetupBody = false)
 	{
-		$sHtml = \preg_replace('/<body([^>]*)>/im', '<div\\1>', $sHtml);
+		$sHtml = \preg_replace('/<body([^>]*)>/im', '<div'.($bSetupBody ? ' class="mailso-body" ' : '').'\\1>', $sHtml);
 		$sHtml = \preg_replace('/<\/body>/im', '</div>', $sHtml);
 		$sHtml = \preg_replace('/<html([^>]*)>/im', '<div\\1>', $sHtml);
 		$sHtml = \preg_replace('/<\/html>/im', '</div>', $sHtml);
+		
 		return $sHtml;
 	}
 
@@ -125,10 +130,12 @@ class HtmlUtils
 	 * @param \DOMElement $oElement
 	 * @param bool $bHasExternals
 	 * @param array $aFoundCIDs
+	 * @param array $aContentLocationUrls
+	 * @param array $aFoundedContentLocationUrls
 	 *
 	 * @return string
 	 */
-	public static function ClearStyle($sStyle, $oElement, &$bHasExternals, &$aFoundCIDs)
+	public static function ClearStyle($sStyle, $oElement, &$bHasExternals, &$aFoundCIDs, $aContentLocationUrls, &$aFoundedContentLocationUrls)
 	{
 		$sStyle = \trim($sStyle);
 		$aOutStyles = array();
@@ -237,12 +244,15 @@ class HtmlUtils
 
 	/**
 	 * @param string $sHtml
-	 * @param bool $bHasExternals
-	 * @param array $aFoundCIDs
+	 * @param bool $bHasExternals = false
+	 * @param array $aFoundCIDs = array()
+	 * @param array $aContentLocationUrls = array()
+	 * @param array $aFoundedContentLocationUrls = array()
 	 *
 	 * @return string
 	 */
-	public static function ClearHtml($sHtml, &$bHasExternals = false, &$aFoundCIDs = array())
+	public static function ClearHtml($sHtml, &$bHasExternals = false, &$aFoundCIDs = array(),
+		$aContentLocationUrls = array(), &$aFoundedContentLocationUrls = array())
 	{
 		$sHtml = null === $sHtml ? '' : (string) $sHtml;
 		$sHtml = \trim($sHtml);
@@ -283,10 +293,10 @@ class HtmlUtils
 					$oElement->setAttribute('tabindex', '-1');
 				}
 
-				if ('blockquote' === $sTagNameLower)
-				{
-					$oElement->removeAttribute('style');
-				}
+//				if ('blockquote' === $sTagNameLower)
+//				{
+//					$oElement->removeAttribute('style');
+//				}
 
 				@$oElement->removeAttribute('id');
 				@$oElement->removeAttribute('class');
@@ -299,7 +309,12 @@ class HtmlUtils
 					$sSrc = \trim($oElement->getAttribute('src'));
 					$oElement->removeAttribute('src');
 
-					if ('cid:' === \strtolower(\substr($sSrc, 0, 4)))
+					if (\in_array($sSrc, $aContentLocationUrls))
+					{
+						$oElement->setAttribute('data-x-src-location', $sSrc);
+						$aFoundedContentLocationUrls[] = $sSrc;
+					}
+					else if ('cid:' === \strtolower(\substr($sSrc, 0, 4)))
 					{
 						$oElement->setAttribute('data-x-src-cid', \substr($sSrc, 4));
 						$aFoundCIDs[] = \substr($sSrc, 4);
@@ -351,7 +366,8 @@ class HtmlUtils
 				if ($oElement->hasAttribute('style'))
 				{
 					$oElement->setAttribute('style',
-						\MailSo\Base\HtmlUtils::ClearStyle($oElement->getAttribute('style'), $oElement, $bHasExternals, $aFoundCIDs));
+						\MailSo\Base\HtmlUtils::ClearStyle($oElement->getAttribute('style'), $oElement, $bHasExternals,
+							$aFoundCIDs, $aContentLocationUrls, $aFoundedContentLocationUrls));
 				}
 			}
 
@@ -361,7 +377,7 @@ class HtmlUtils
 		unset($oDom);
 
 		$sResult = \MailSo\Base\HtmlUtils::ClearTags($sResult);
-		$sResult = \MailSo\Base\HtmlUtils::ClearBodyAndHtmlTag($sResult);
+		$sResult = \MailSo\Base\HtmlUtils::ClearBodyAndHtmlTag($sResult, true);
 
 		return \trim($sResult);
 	}
@@ -369,17 +385,23 @@ class HtmlUtils
 	/**
 	 * @param string $sHtml
 	 * @param array $aFoundCids = array()
+	 * @param array|null $mFoundDataURL = null
+	 * @param array $aFoundedContentLocationUrls = array()
 	 *
 	 * @return string
 	 */
-	public static function BuildHtml($sHtml, &$aFoundCids = array())
+	public static function BuildHtml($sHtml, &$aFoundCids = array(), &$mFoundDataURL = null, &$aFoundedContentLocationUrls = array())
 	{
+		$bRtl = \MailSo\Base\Utils::IsRTL($sHtml);
+
 		$oDom = \MailSo\Base\HtmlUtils::GetDomFromText($sHtml);
 		unset($sHtml);
 
 		$aNodes = $oDom->getElementsByTagName('*');
 		foreach ($aNodes as /* @var $oElement \DOMElement */ $oElement)
 		{
+			$sTagNameLower = \strtolower($oElement->tagName);
+			
 			if ($oElement->hasAttribute('data-x-src-cid'))
 			{
 				$sCid = $oElement->getAttribute('data-x-src-cid');
@@ -391,6 +413,20 @@ class HtmlUtils
 
 					@$oElement->removeAttribute('src');
 					$oElement->setAttribute('src', 'cid:'.$sCid);
+				}
+			}
+			
+			if ($oElement->hasAttribute('data-x-src-location'))
+			{
+				$sSrc = $oElement->getAttribute('data-x-src-location');
+				$oElement->removeAttribute('data-x-src-location');
+
+				if (!empty($sSrc))
+				{
+					$aFoundedContentLocationUrls[] = $sSrc;
+
+					@$oElement->removeAttribute('src');
+					$oElement->setAttribute('src', $sSrc);
 				}
 			}
 
@@ -457,6 +493,18 @@ class HtmlUtils
 					$oElement->setAttribute('style', (empty($sStyles) ? '' : $sStyles.'; ').$sAddStyles);
 				}
 			}
+
+			if ('img' === $sTagNameLower && \is_array($mFoundDataURL))
+			{
+				$sSrc = $oElement->getAttribute('src');
+				if ('data:image/' === \strtolower(\substr($sSrc, 0, 11)))
+				{
+					$sHash = \md5($sSrc);
+					$mFoundDataURL[$sHash] = $sSrc;
+
+					$oElement->setAttribute('src', 'cid:'.$sHash);
+				}
+			}
 		}
 
 		$sResult = $oDom->saveHTML();
@@ -465,7 +513,7 @@ class HtmlUtils
 		$sResult = \MailSo\Base\HtmlUtils::ClearTags($sResult);
 		$sResult = \MailSo\Base\HtmlUtils::ClearBodyAndHtmlTag($sResult);
 
-		return '<!DOCTYPE html><html'.(\MailSo\Base\Utils::IsRTL($sResult) ? ' dir="rtl"' : ' dir="ltr"').'><head><meta http-equiv="Content-Type" content="text/html; charset=utf-8" /><head>'.
+		return '<!DOCTYPE html><html'.($bRtl ? ' dir="rtl"' : '').'><head><meta http-equiv="Content-Type" content="text/html; charset=utf-8" /><head>'.
 			'<body>'.\trim($sResult).'</body></html>';
 	}
 

@@ -200,11 +200,52 @@ class BodyStructure
 	}
 
 	/**
+	 * return string
+	 */
+	public function ContentLocation()
+	{
+		return (null === $this->sLocation) ? '' : $this->sLocation;
+	}
+
+	/**
 	 * return bool
 	 */
 	public function IsInline()
 	{
-		return (null === $this->sDisposition) ? false : ('inline' === strtolower($this->sDisposition));
+		return (null === $this->sDisposition) ?
+			(0 < strlen($this->ContentID())) : ('inline' === strtolower($this->sDisposition));
+	}
+
+	/**
+	 * return bool
+	 */
+	public function IsImage()
+	{
+		return 'image' === \MailSo\Base\Utils::ContentTypeType($this->ContentType(), $this->FileName());
+	}
+
+	/**
+	 * return bool
+	 */
+	public function IsArchive()
+	{
+		return 'archive' === \MailSo\Base\Utils::ContentTypeType($this->ContentType(), $this->FileName());
+	}
+
+	/**
+	 * @return bool
+	 */
+	public function IsPdf()
+	{
+		return 'pdf' === \MailSo\Base\Utils::ContentTypeType($this->ContentType(), $this->FileName());
+	}
+
+	/**
+	 * @return bool
+	 */
+	public function IsDoc()
+	{
+		return 'doc' === \MailSo\Base\Utils::ContentTypeType($this->ContentType(), $this->FileName());
 	}
 
 	/**
@@ -773,7 +814,8 @@ class BodyStructure
 				$sMailEncodingName,
 				$sDisposition,
 				$aDispositionParams,
-				null === $sFileName || 0 === strlen($sFileName) ? $sName : $sFileName,
+				\MailSo\Base\Utils::Utf8Clear(
+					null === $sFileName || 0 === strlen($sFileName) ? $sName : $sFileName),
 				$sLanguage,
 				$sLocation,
 				$iSize,

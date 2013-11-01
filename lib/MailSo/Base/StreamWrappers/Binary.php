@@ -169,7 +169,7 @@ class Binary
 			$sUtilsDecodeOrEncodeFunctionName = 'InlineNullDecode';
 		}
 
-		$sHashName = md5(microtime(true).mt_rand(1000, 9999));
+		$sHashName = md5(microtime(true).rand(1000, 9999));
 
 		if (null !== $sFromEncoding && null !== $sToEncoding && $sFromEncoding !== $sToEncoding)
 		{

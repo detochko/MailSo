@@ -26,7 +26,7 @@ class MailClient
 		$this->oLogger = null;
 
 		$this->oImapClient = \MailSo\Imap\ImapClient::NewInstance();
-		$this->oImapClient->SetTimeOuts(5, 30);
+		$this->oImapClient->SetTimeOuts(10, 30); // TODO
 	}
 
 	/**
@@ -58,6 +58,8 @@ class MailClient
 	/**
 	 * @param string $sLogin
 	 * @param string $sPassword
+	 * @param string $sProxyAuthUser = ''
+	 * @param bool $bUseAuthPlainIfSupported = false
 	 *
 	 * @return \MailSo\Mail\MailClient
 	 *
@@ -65,9 +67,9 @@ class MailClient
 	 * @throws \MailSo\Net\Exceptions\Exception
 	 * @throws \MailSo\Imap\Exceptions\LoginException
 	 */
-	public function Login($sLogin, $sPassword)
+	public function Login($sLogin, $sPassword, $sProxyAuthUser = '', $bUseAuthPlainIfSupported = false)
 	{
-		$this->oImapClient->Login($sLogin, $sPassword);
+		$this->oImapClient->Login($sLogin, $sPassword, $sProxyAuthUser, $bUseAuthPlainIfSupported);
 		return $this;
 	}
 
@@ -633,6 +635,16 @@ class MailClient
 
 		$sUidNext = isset($aFolderStatus[\MailSo\Imap\Enumerations\FolderResponseStatus::UIDNEXT])
 			? (string) $aFolderStatus[\MailSo\Imap\Enumerations\FolderResponseStatus::UIDNEXT] : '0';
+
+
+		if (0 === \strpos($sFolderName, '[Gmail]/'))
+		{
+			$oFolder = $this->oImapClient->FolderCurrentInformation();
+			if ($oFolder && null !== $oFolder->Exists)
+			{
+				$iCount = (int) $oFolder->Exists;
+			}
+		}
 	}
 
 	/**
@@ -682,7 +694,7 @@ class MailClient
 					$aFlags = \array_map('strtolower', $oFetchResponse->GetFetchValue(
 						\MailSo\Imap\Enumerations\FetchType::FLAGS));
 
-					if (\in_array(\strtolower(\MailSo\Imap\Enumerations\MessageFlag::RECENT), $aFlags) &&
+					if (\in_array(\strtolower(\MailSo\Imap\Enumerations\MessageFlag::RECENT), $aFlags) ||
 						!\in_array(\strtolower(\MailSo\Imap\Enumerations\MessageFlag::SEEN), $aFlags))
 					{
 						$sUid = $oFetchResponse->GetFetchValue(\MailSo\Imap\Enumerations\FetchType::UID);
@@ -703,14 +715,14 @@ class MailClient
 
 						if (0 < \strlen($sCharset))
 						{
-							$oHeaders->SetParentCharset(\MailSo\Base\Enumerations\Charset::ISO_8859_1);
+							$oHeaders->SetParentCharset($sCharset);
 						}
 
 						$aNewMessages[] = array(
 							'Folder' => $sFolderName,
 							'Uid' => $sUid,
-							'Subject' => $oHeaders->ValueByName(\MailSo\Mime\Enumerations\Header::SUBJECT),
-							'From' => $oHeaders->GetAsEmailCollection(\MailSo\Mime\Enumerations\Header::FROM_)
+							'Subject' => $oHeaders->ValueByName(\MailSo\Mime\Enumerations\Header::SUBJECT, 0 === \strlen($sCharset)),
+							'From' => $oHeaders->GetAsEmailCollection(\MailSo\Mime\Enumerations\Header::FROM_, 0 === \strlen($sCharset))
 						);
 					}
 				}
@@ -768,7 +780,8 @@ class MailClient
 			'MessageUnseenCount' => $iUnseenCount,
 			'UidNext' => $sUidNext,
 			'Flags' => $aFlags,
-			'NewMessages' => 'INBOX' === $sFolderName ? $this->getFolderNextMessageInformation($sFolderName, $sPrevUidNext, $sUidNext) : array()
+			'NewMessages' => 'INBOX' === $sFolderName ?
+				$this->getFolderNextMessageInformation($sFolderName, $sPrevUidNext, $sUidNext) : array()
 		);
 
 		return $aResult;
@@ -848,7 +861,7 @@ class MailClient
 			{
 				do
 				{
-					$sKey = \md5(\mt_rand(10000, 90000).\microtime(true));
+					$sKey = \md5(\rand(10000, 90000).\microtime(true));
 				}
 				while (isset($aCache[$sKey]));
 
@@ -864,7 +877,7 @@ class MailClient
 			{
 				do
 				{
-					$sKey = \md5(\mt_rand(10000, 90000).\microtime(true));
+					$sKey = \md5(\rand(10000, 90000).\microtime(true));
 				}
 				while (isset($aCache[$sKey]));
 
@@ -1308,6 +1321,18 @@ class MailClient
 	}
 
 	/**
+	 * @return bool
+	 *
+	 * @throws \MailSo\Net\Exceptions\Exception
+	 */
+	public function IsThreadsSupported()
+	{
+		return $this->oImapClient->IsSupported('THREAD=REFS') ||
+			$this->oImapClient->IsSupported('THREAD=REFERENCES') ||
+			$this->oImapClient->IsSupported('THREAD=ORDEREDSUBJECT');
+	}
+
+	/**
 	 * @param string $sFolderName
 	 * @param int $iOffset = 0
 	 * @param int $iLimit = 10
@@ -1348,6 +1373,7 @@ class MailClient
 
 		$aThreads = array();
 		$iMessageCount = 0;
+		$iMessageRealCount = 0;
 		$iMessageUnseenCount = 0;
 		$sUidNext = '0';
 		$sSerializedHash = '';
@@ -1360,16 +1386,17 @@ class MailClient
 			$oCacher = null;
 		}
 
-		$this->initFolderValues($sFolderName, $iMessageCount, $iMessageUnseenCount, $sUidNext);
+		$this->initFolderValues($sFolderName, $iMessageRealCount, $iMessageUnseenCount, $sUidNext);
+		$iMessageCount = $iMessageRealCount;
 
-		$oMessageCollection->FolderHash = self::GenerateHash($sFolderName, $iMessageCount, $iMessageUnseenCount, $sUidNext);
+		$oMessageCollection->FolderHash = self::GenerateHash($sFolderName, $iMessageRealCount, $iMessageUnseenCount, $sUidNext);
 		$oMessageCollection->UidNext = $sUidNext;
 		$oMessageCollection->NewMessages = $this->getFolderNextMessageInformation($sFolderName, $sPrevUidNext, $sUidNext);
 
 		$bCacher = false;
 		$bSearch = false;
 
-		if (0 < $iMessageCount)
+		if (0 < $iMessageRealCount)
 		{
 			$bIndexAsUid = false;
 			$aIndexOrUids = array();
@@ -1467,10 +1494,10 @@ class MailClient
 
 			if (\is_array($aIndexOrUids))
 			{
-				$oMessageCollection->MessageCount = $iMessageCount;
+				$oMessageCollection->MessageCount = $iMessageRealCount;
 				$oMessageCollection->MessageUnseenCount = $iMessageUnseenCount;
-				$oMessageCollection->MessageSearchCount = 0 === \strlen($sSearch)
-					? $oMessageCollection->MessageCount : \count($aIndexOrUids);
+				$oMessageCollection->MessageResultCount = 0 === \strlen($sSearch)
+					? $iMessageCount : \count($aIndexOrUids);
 
 				if (0 < count($aIndexOrUids))
 				{
@@ -1593,25 +1620,40 @@ class MailClient
 	 * @param string $sParent = ''
 	 * @param string $sListPattern = '*'
 	 * @param bool $bUseListStatus = false
+	 * @param bool $bUseListSubscribeStatus = false
 	 *
 	 * @return \MailSo\Mail\FolderCollection|false
 	 */
-	public function Folders($sParent = '', $sListPattern = '*', $bUseListStatus = false)
+	public function Folders($sParent = '', $sListPattern = '*', $bUseListStatus = false, $bUseListSubscribeStatus = true)
 	{
 		$oFolderCollection = false;
 
 		$aFolders = $this->oImapClient->FolderList($sParent, $sListPattern);
-		$aSubscribedFolders = $this->oImapClient->FolderSubscribeList($sParent, $sListPattern);
-
-		$mStatusFolders = null;
-		if ($bUseListStatus)
+		
+		$aSubscribedFolders = null;
+		if ($bUseListSubscribeStatus)
 		{
-			$mStatusFolders = $this->oImapClient->FolderStatusList($sParent, $sListPattern);
+			try
+			{
+				$aSubscribedFolders = $this->oImapClient->FolderSubscribeList($sParent, $sListPattern);
+			}
+			catch (\Exception $oException)
+			{
+
+			}
 		}
 
-		$aImapSubscribedFoldersHelper = array();
+// TODO
+//		$mStatusFolders = null;
+//		if ($bUseListStatus)
+//		{
+//			$mStatusFolders = $this->oImapClient->FolderStatusList($sParent, $sListPattern);
+//		}
+
+		$aImapSubscribedFoldersHelper = null;
 		if (\is_array($aSubscribedFolders))
 		{
+			$aImapSubscribedFoldersHelper = array();
 			foreach ($aSubscribedFolders as /* @var $oImapFolder \MailSo\Imap\Folder */ $oImapFolder)
 			{
 				$aImapSubscribedFoldersHelper[] = $oImapFolder->FullNameRaw();
@@ -1626,7 +1668,8 @@ class MailClient
 			foreach ($aFolders as /* @var $oImapFolder \MailSo\Imap\Folder */ $oImapFolder)
 			{
 				$aMailFoldersHelper[] = Folder::NewInstance($oImapFolder,
-					\in_array($oImapFolder->FullNameRaw(), $aImapSubscribedFoldersHelper) || $oImapFolder->IsInbox()
+					(null === $aImapSubscribedFoldersHelper || \in_array($oImapFolder->FullNameRaw(), $aImapSubscribedFoldersHelper)) ||
+					$oImapFolder->IsInbox()
 				);
 			}
 		}
@@ -1662,85 +1705,10 @@ class MailClient
 			{
 				$oFolderCollection->SetNamespace($oNamespace->GetPersonalNamespace());
 			}
+			
+			$oFolderCollection->IsThreadsSupported = $this->IsThreadsSupported();
 		}
 
-		return $oFolderCollection;
-	}
-
-	/**
-	 * @param string $sFolderName = ''
-	 *
-	 * @return \MailSo\Mail\FolderCollection|false
-	 */
-	public function FoldersLevel($sFolderName = '', $sDelimiter = '/')
-	{
-		$oFolderCollection = false;
-
-		$sFolderLevel = 0 === \strlen($sFolderName) ? '' : $sFolderName.$sDelimiter;
-
-		$aFolders = $this->oImapClient->FolderList($sFolderLevel, '%');
-		$aSubscribedFolders = $this->oImapClient->FolderSubscribeList($sFolderLevel, '%');
-
-		$aSubFolders = $this->oImapClient->FolderList($sFolderLevel, '%/%');
-		$aSubSubscribedFolders = $this->oImapClient->FolderSubscribeList($sFolderLevel, '%/%');
-
-		$aImapSubscribedFoldersHelper = array();
-		if (\is_array($aSubscribedFolders))
-		{
-			foreach ($aSubscribedFolders as /* @var $oImapFolder \MailSo\Imap\Folder */ $oImapFolder)
-			{
-				$aImapSubscribedFoldersHelper[] = $oImapFolder->FullNameRaw();
-			}
-		}
-		if (\is_array($aSubSubscribedFolders))
-		{
-			foreach ($aSubSubscribedFolders as /* @var $oImapFolder \MailSo\Imap\Folder */ $oImapFolder)
-			{
-				$aImapSubscribedFoldersHelper[] = $oImapFolder->FullNameRaw();
-			}
-		}
-
-		$aMailFoldersHelper = null;
-		if (\is_array($aFolders))
-		{
-			$aMailFoldersHelper = array();
-
-			foreach ($aFolders as /* @var $oImapFolder \MailSo\Imap\Folder */ $oImapFolder)
-			{
-				$aMailFoldersHelper[] = Folder::NewInstance($oImapFolder,
-					in_array($oImapFolder->FullNameRaw(), $aImapSubscribedFoldersHelper) || $oImapFolder->IsInbox()
-				);
-			}
-		}
-
-		if (\is_array($aMailFoldersHelper) && \is_array($aSubFolders))
-		{
-			foreach ($aSubFolders as /* @var $oImapFolder \MailSo\Imap\Folder */ $oImapFolder)
-			{
-				$aMailFoldersHelper[] = Folder::NewInstance($oImapFolder,
-					\in_array($oImapFolder->FullNameRaw(), $aImapSubscribedFoldersHelper) || $oImapFolder->IsInbox()
-				);
-			}
-		}
-
-		if (\is_array($aMailFoldersHelper))
-		{
-			$oFolderCollection = FolderCollection::NewInstance();
-			$oFolderCollection->InitByUnsortedMailFolderArray($aMailFoldersHelper);
-		}
-
-		if (0 < \strlen($sFolderLevel) && $oFolderCollection)
-		{
-			$oLevelFolder = $oFolderCollection->GetByFullNameRaw($sFolderName);
-			if ($oLevelFolder && $oLevelFolder->HasSubFolders())
-			{
-				$oFolderCollection = $oLevelFolder->SubFolders();
-			}
-			else
-			{
-				$oFolderCollection = false;
-			}
-		}
 
 		return $oFolderCollection;
 	}
@@ -1770,8 +1738,8 @@ class MailClient
 			// TODO
 			throw new \MailSo\Mail\Exceptions\RuntimeException(
 				0 === \strlen(trim($sFolderParentFullNameRaw))
-					? 'Can not get folder delimiter'
-					: 'Can not create folder in non-existen parent folder');
+					? 'Cannot get folder delimiter'
+					: 'Cannot create folder in non-existen parent folder');
 		}
 
 		$sDelimiter = $aFolders[0]->Delimiter();
@@ -1806,12 +1774,13 @@ class MailClient
 	/**
 	 * @param string $sPrevFolderFullNameRaw
 	 * @param string $sNewTopFolderNameInUtf
+	 * @param bool $bSubscribeOnRename = true
 	 *
 	 * @return \MailSo\Mail\MailClient
 	 *
 	 * @throws \MailSo\Base\Exceptions\InvalidArgumentException
 	 */
-	public function FolderRename($sPrevFolderFullNameRaw, $sNewTopFolderNameInUtf)
+	public function FolderRename($sPrevFolderFullNameRaw, $sNewTopFolderNameInUtf, $bSubscribeOnRename = true)
 	{
 		if (0 === \strlen($sPrevFolderFullNameRaw) || 0 === \strlen($sNewTopFolderNameInUtf))
 		{
@@ -1822,19 +1791,23 @@ class MailClient
 		if (!\is_array($aFolders) || !isset($aFolders[0]))
 		{
 			// TODO
-			throw new \MailSo\Mail\Exceptions\RuntimeException('Can not rename non-existen folder');
+			throw new \MailSo\Mail\Exceptions\RuntimeException('Cannot rename non-existen folder');
 		}
 
 		$sDelimiter = $aFolders[0]->Delimiter();
 		$iLast = \strrpos($sPrevFolderFullNameRaw, $sDelimiter);
 		$sFolderParentFullNameRaw = false === $iLast ? '' : \substr($sPrevFolderFullNameRaw, 0, $iLast + 1);
 
-		$aSubscribeFolders = $this->oImapClient->FolderSubscribeList($sPrevFolderFullNameRaw, '*');
-		if (\is_array($aSubscribeFolders) && 0 < count($aSubscribeFolders))
+		$mSubscribeFolders = null;
+		if ($bSubscribeOnRename)
 		{
-			foreach ($aSubscribeFolders as /* @var $oFolder \MailSo\Imap\Folder */ $oFolder)
+			$mSubscribeFolders = $this->oImapClient->FolderSubscribeList($sPrevFolderFullNameRaw, '*');
+			if (\is_array($mSubscribeFolders) && 0 < count($mSubscribeFolders))
 			{
-				$this->oImapClient->FolderUnSubscribe($oFolder->FullNameRaw());
+				foreach ($mSubscribeFolders as /* @var $oFolder \MailSo\Imap\Folder */ $oFolder)
+				{
+					$this->oImapClient->FolderUnSubscribe($oFolder->FullNameRaw());
+				}
 			}
 		}
 
@@ -1846,16 +1819,16 @@ class MailClient
 		{
 			// TODO
 			throw new \MailSo\Mail\Exceptions\RuntimeException(
-				'new folder name contain delimiter');
+				'New folder name contain delimiter');
 		}
 
 		$sNewFolderFullNameRaw = $sFolderParentFullNameRaw.$sNewFolderFullNameRaw;
 
 		$this->oImapClient->FolderRename($sPrevFolderFullNameRaw, $sNewFolderFullNameRaw);
 
-		if (\is_array($aSubscribeFolders) && 0 < count($aSubscribeFolders))
+		if (\is_array($mSubscribeFolders) && 0 < count($mSubscribeFolders))
 		{
-			foreach ($aSubscribeFolders as /* @var $oFolder \MailSo\Imap\Folder */ $oFolder)
+			foreach ($mSubscribeFolders as /* @var $oFolder \MailSo\Imap\Folder */ $oFolder)
 			{
 				$sFolderFullNameRawForResubscrine = $oFolder->FullNameRaw();
 				if (0 === \strpos($sFolderFullNameRawForResubscrine, $sPrevFolderFullNameRaw))

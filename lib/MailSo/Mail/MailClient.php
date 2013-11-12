@@ -957,12 +957,21 @@ class MailClient
 			{
 				if (true)
 				{
-					$sValue = $this->escapeSearchString($aLines['OTHER']);
+                    if(\in_array($aLines['OTHER'], array(
+                        'ALL', 'ANSWERED', 'DELETED', 'FLAGGED',
+                        'NEW', 'OLD', 'RECENT', 'SEEN', 'UNSEEN', 
+                        'UNANSWERED', 'UNDELETED', 'UNFLAGGED'))) {
+                        $oSearchBuilder->AddOr($aLines['OTHER'], '');
+                    }
+                    else {                    
+                        
+                        $sValue = $this->escapeSearchString($aLines['OTHER']);
 
-					$oSearchBuilder->AddOr('FROM', $sValue);
-					$oSearchBuilder->AddOr('TO', $sValue);
-					$oSearchBuilder->AddOr('CC', $sValue);
-					$oSearchBuilder->AddOr('SUBJECT', $sValue);
+                        $oSearchBuilder->AddOr('FROM', $sValue);
+                        $oSearchBuilder->AddOr('TO', $sValue);
+                        $oSearchBuilder->AddOr('CC', $sValue);
+                        $oSearchBuilder->AddOr('SUBJECT', $sValue);
+                    }
 				}
 				else
 				{
@@ -1815,14 +1824,6 @@ class MailClient
 			\MailSo\Base\Enumerations\Charset::UTF_8,
 			\MailSo\Base\Enumerations\Charset::UTF_7_IMAP);
 
-		if (0 < \strlen($sDelimiter) && false !== \strpos($sNewFolderFullNameRaw, $sDelimiter))
-		{
-			// TODO
-			throw new \MailSo\Mail\Exceptions\RuntimeException(
-				'New folder name contain delimiter');
-		}
-
-		$sNewFolderFullNameRaw = $sFolderParentFullNameRaw.$sNewFolderFullNameRaw;
 
 		$this->oImapClient->FolderRename($sPrevFolderFullNameRaw, $sNewFolderFullNameRaw);
 

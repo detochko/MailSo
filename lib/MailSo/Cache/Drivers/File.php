@@ -25,7 +25,7 @@ class File implements \MailSo\Cache\DriverInterface
 		$this->sCacheFolder = rtrim(trim($this->sCacheFolder), '\\/').'/';
 		if (!\is_dir($this->sCacheFolder))
 		{
-			@\mkdir($this->sCacheFolder, 0777);
+			@\mkdir($this->sCacheFolder, 0755);
 		}
 	}
 
@@ -114,7 +114,7 @@ class File implements \MailSo\Cache\DriverInterface
 			$sFilePath = $this->sCacheFolder.'/'.$sKeyPath;
 			if ($bMkDir && !\is_dir(\dirname($sFilePath)))
 			{
-				if (!\mkdir(\dirname($sFilePath), 0777, true))
+				if (!\mkdir(\dirname($sFilePath), 0755, true))
 				{
 					$sFilePath = '';
 				}

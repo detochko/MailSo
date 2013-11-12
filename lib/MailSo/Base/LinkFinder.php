@@ -40,6 +40,11 @@ class LinkFinder
 	private $fMailWrapper;
 
 	/**
+	 * @var int
+	 */
+	private $iOptimizationLimit;
+
+	/**
 	 * @access private
 	 */
 	private function __construct()
@@ -51,6 +56,8 @@ class LinkFinder
 		{
 			$this->iHtmlSpecialCharsFlags |= ENT_IGNORE;
 		}
+
+		$this->iOptimizationLimit = 300000;
 
 		$this->Clear();
 	}
@@ -150,7 +157,8 @@ class LinkFinder
 	 */
 	public function CompileText($bUseHtmlSpecialChars = true, $bFindShortLinks = true)
 	{
-		$sText = $this->sText;
+		$sText = \substr($this->sText, 0, $this->iOptimizationLimit);
+		$sSubText = \substr($this->sText, $this->iOptimizationLimit);
 
 		$this->aPrepearPlainStringUrls = array();
 		if (null !== $this->fLinkWrapper && \is_callable($this->fLinkWrapper))
@@ -168,23 +176,32 @@ class LinkFinder
 			$sText = $this->findShortLinks($sText, $this->fLinkWrapper);
 		}
 
+		$sResult = '';
 		if ($bUseHtmlSpecialChars)
 		{
-			$sText = @\htmlentities($sText, $this->iHtmlSpecialCharsFlags, 'UTF-8');
+			$sResult = @\htmlentities($sText.$sSubText, $this->iHtmlSpecialCharsFlags, 'UTF-8');
 		}
+		else
+		{
+			$sResult = $sText.$sSubText;
+		}
+
+		unset($sText, $sSubText);
 
 		if (0 < \count($this->aPrepearPlainStringUrls))
 		{
-			for ($iIndex = 0, $iLen = \count($this->aPrepearPlainStringUrls); $iIndex < $iLen; $iIndex++)
-			{
-				$sText = \str_replace(\MailSo\Base\LinkFinder::OPEN_LINK.$iIndex.
-					\MailSo\Base\LinkFinder::CLOSE_LINK, $this->aPrepearPlainStringUrls[$iIndex], $sText);
-			}
+			$aPrepearPlainStringUrls = $this->aPrepearPlainStringUrls;
+			$sResult = \preg_replace_callback('/'.\preg_quote(\MailSo\Base\LinkFinder::OPEN_LINK, '/').
+				'([\d]+)'.\preg_quote(\MailSo\Base\LinkFinder::CLOSE_LINK, '/').'/',
+					function ($aMatches) use ($aPrepearPlainStringUrls) {
+						$iIndex = (int) $aMatches[1];
+						return isset($aPrepearPlainStringUrls[$iIndex]) ? $aPrepearPlainStringUrls[$iIndex] : '';
+					}, $sResult);
 
 			$this->aPrepearPlainStringUrls = array();
 		}
 
-		return $sText;
+		return $sResult;
 	}
 
 	/**

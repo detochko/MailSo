@@ -87,7 +87,7 @@ class Loader
 		{
 			$aResult = array(
 				'php' => array(
-					'phpversion' => \phpversion(),
+					'phpversion' => PHP_VERSION,
 					'ssl' => (int) \function_exists('openssl_open'),
 					'iconv' => (int) \function_exists('iconv')
 			));

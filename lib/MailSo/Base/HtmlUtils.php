@@ -303,6 +303,7 @@ class HtmlUtils
 				@$oElement->removeAttribute('contenteditable');
 				@$oElement->removeAttribute('designmode');
 				@$oElement->removeAttribute('data-bind');
+				@$oElement->removeAttribute('xmlns');
 
 				if ($oElement->hasAttribute('src'))
 				{

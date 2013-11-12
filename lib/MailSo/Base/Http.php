@@ -301,7 +301,7 @@ class Http
 
 		if ($bRemoveWWW)
 		{
-			$sHost = 'www.' === \substr(\strtolower($sHost), 0, 4) ? \substr($sHost, 0, 4) : $sHost;
+			$sHost = 'www.' === \substr(\strtolower($sHost), 0, 4) ? \substr($sHost, 4) : $sHost;
 		}
 
 		if ($bWithRemoteUserData)
@@ -401,10 +401,11 @@ class Http
 	 * @param string $sContentType = ''
 	 * @param int $iCode = 0
 	 * @param \MailSo\Log\Logger $oLogger = null
+	 * @param int $iTimeout = 10
 	 *
 	 * @return bool
 	 */
-	public function SaveUrlToFile($sUrl, $rFile, $sCustomUserAgent = 'MaiSo Http User Agent (v1)', &$sContentType = '', &$iCode = 0, $oLogger = null)
+	public function SaveUrlToFile($sUrl, $rFile, $sCustomUserAgent = 'MaiSo Http User Agent (v1)', &$sContentType = '', &$iCode = 0, $oLogger = null, $iTimeout = 10)
 	{
 		if (!is_resource($rFile))
 		{
@@ -423,7 +424,7 @@ class Http
 			CURLOPT_SSL_VERIFYPEER => false,
 			CURLOPT_RETURNTRANSFER => true,
 			CURLOPT_FILE => $rFile,
-			CURLOPT_TIMEOUT => 10
+			CURLOPT_TIMEOUT => (int) $iTimeout
 		);
 
 		if (0 < \strlen($sCustomUserAgent))

@@ -1771,6 +1771,22 @@ class MailClient
 		return $this;
 	}
 
+    
+	/**
+	 * @param string $sPrevFolderFullNameRaw
+	 * @param string $sNextFolderFullNameInUtf
+	 * @param bool $bSubscribeOnMove = true
+	 *
+	 * @return \MailSo\Mail\MailClient
+	 *
+	 * @throws \MailSo\Base\Exceptions\InvalidArgumentException
+	 */
+	public function FolderMove($sPrevFolderFullNameRaw, $sNextFolderFullNameInUtf, $bSubscribeOnRename = true)
+	{
+		return $this->folderModify($sPrevFolderFullNameRaw, $sNextFolderFullNameInUtf, false, $bSubscribeOnRename);
+	}
+    
+    
 	/**
 	 * @param string $sPrevFolderFullNameRaw
 	 * @param string $sNewTopFolderNameInUtf
@@ -1782,7 +1798,23 @@ class MailClient
 	 */
 	public function FolderRename($sPrevFolderFullNameRaw, $sNewTopFolderNameInUtf, $bSubscribeOnRename = true)
 	{
-		if (0 === \strlen($sPrevFolderFullNameRaw) || 0 === \strlen($sNewTopFolderNameInUtf))
+		return $this->folderModify($sPrevFolderFullNameRaw, $sNewTopFolderNameInUtf, true, $bSubscribeOnRename);
+	}
+    
+    
+	/**
+	 * @param string $sPrevFolderFullNameRaw
+	 * @param string $sNextFolderNameInUtf
+	 * @param bool $bRenameOrMove
+	 * @param bool $bSubscribeOnModify
+	 *
+	 * @return \MailSo\Mail\MailClient
+	 *
+	 * @throws \MailSo\Base\Exceptions\InvalidArgumentException
+	 */
+	public function folderModify($sPrevFolderFullNameRaw, $sNextFolderNameInUtf, $bRenameOrMove, $bSubscribeOnModify)
+	{
+		if (0 === \strlen($sPrevFolderFullNameRaw) || 0 === \strlen($sNextFolderNameInUtf))
 		{
 			throw new \MailSo\Base\Exceptions\InvalidArgumentException();
 		}
@@ -1796,10 +1828,9 @@ class MailClient
 
 		$sDelimiter = $aFolders[0]->Delimiter();
 		$iLast = \strrpos($sPrevFolderFullNameRaw, $sDelimiter);
-		$sFolderParentFullNameRaw = false === $iLast ? '' : \substr($sPrevFolderFullNameRaw, 0, $iLast + 1);
 
 		$mSubscribeFolders = null;
-		if ($bSubscribeOnRename)
+		if ($bSubscribeOnModify)
 		{
 			$mSubscribeFolders = $this->oImapClient->FolderSubscribeList($sPrevFolderFullNameRaw, '*');
 			if (\is_array($mSubscribeFolders) && 0 < count($mSubscribeFolders))
@@ -1811,18 +1842,22 @@ class MailClient
 			}
 		}
 
-		$sNewFolderFullNameRaw = \MailSo\Base\Utils::ConvertEncoding($sNewTopFolderNameInUtf,
-			\MailSo\Base\Enumerations\Charset::UTF_8,
-			\MailSo\Base\Enumerations\Charset::UTF_7_IMAP);
+        $sNewFolderFullNameRaw = \MailSo\Base\Utils::ConvertEncoding($sNextFolderNameInUtf,
+            \MailSo\Base\Enumerations\Charset::UTF_8,
+            \MailSo\Base\Enumerations\Charset::UTF_7_IMAP);
 
-		if (0 < \strlen($sDelimiter) && false !== \strpos($sNewFolderFullNameRaw, $sDelimiter))
-		{
-			// TODO
-			throw new \MailSo\Mail\Exceptions\RuntimeException(
-				'New folder name contain delimiter');
-		}
+        if($bRenameOrMove)
+        {
+            if (0 < \strlen($sDelimiter) && false !== \strpos($sNewFolderFullNameRaw, $sDelimiter))
+            {
+                // TODO
+                throw new \MailSo\Mail\Exceptions\RuntimeException(
+                    'New folder name contain delimiter');
+            }
 
-		$sNewFolderFullNameRaw = $sFolderParentFullNameRaw.$sNewFolderFullNameRaw;
+            $sFolderParentFullNameRaw = false === $iLast ? '' : \substr($sPrevFolderFullNameRaw, 0, $iLast + 1);
+            $sNewFolderFullNameRaw = $sFolderParentFullNameRaw.$sNewFolderFullNameRaw;
+        }
 
 		$this->oImapClient->FolderRename($sPrevFolderFullNameRaw, $sNewFolderFullNameRaw);
 
@@ -1842,7 +1877,7 @@ class MailClient
 		}
 
 		return $this;
-	}
+	}    
 
 	/**
 	 * @param string $sFolderFullNameRaw
